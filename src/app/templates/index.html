@@ -3,13 +3,13 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Weine erfassen</title>
+    <title>{% if editing_wine %}Wein bearbeiten{% else %}Weine und Degustationen{% endif %}</title>
     <style>
         body {
             font-family: system-ui, sans-serif;
             line-height: 1.5;
             margin: 2rem auto;
-            max-width: 56rem;
+            max-width: 64rem;
             padding: 0 1rem;
         }
 
@@ -24,7 +24,7 @@
             gap: 0.3rem;
         }
 
-        input, textarea, button {
+        input, select, textarea, button {
             font: inherit;
             padding: 0.5rem;
         }
@@ -50,20 +50,50 @@
             text-align: left;
             vertical-align: top;
         }
+
+        .edit-link {
+            align-items: center;
+            border-radius: 0.25rem;
+            color: inherit;
+            display: inline-flex;
+            padding: 0.35rem;
+        }
+
+        .edit-link:hover, .edit-link:focus-visible {
+            background: #f3f5f2;
+        }
+
+        .edit-link svg {
+            height: 1.15rem;
+            width: 1.15rem;
+        }
+
+        .tastings {
+            margin: 0;
+            padding-left: 1.2rem;
+        }
     </style>
 </head>
 <body>
     <main>
-        <h1>Wein erfassen</h1>
+        {% if editing_wine %}
+            <h1>Wein bearbeiten</h1>
+        {% else %}
+            <h1>Wein erfassen</h1>
+        {% endif %}
 
         {% if created %}
             <p class="message" role="status">Der Wein wurde gespeichert.</p>
         {% endif %}
-
+        {% if updated %}
+            <p class="message" role="status">Die Änderungen wurden gespeichert.</p>
+        {% endif %}
+        {% if tasting_created %}
+            <p class="message" role="status">Die Degustation wurde gespeichert.</p>
+        {% endif %}
         {% if database_error %}
             <p class="message" role="alert">{{ database_error }}</p>
         {% endif %}
-
         {% if errors %}
             <div class="message" role="alert">
                 <p>Bitte prüfe die folgenden Meldungen:</p>
@@ -75,7 +105,8 @@
             </div>
         {% endif %}
 
-        <form method="post">
+        {% set form_action = url_for('edit_wine', wine_id=editing_wine.id) if editing_wine else url_for('index') %}
+        <form method="post" action="{{ form_action }}">
             <label>
                 Name
                 <input name="name" maxlength="100" required value="{{ values.get('name', '') }}">
@@ -93,46 +124,96 @@
                 <input name="herkunftsort" maxlength="100" required value="{{ values.get('herkunftsort', '') }}">
             </label>
             <label>
-                Bewertung (1–5)
-                <input name="rating" type="number" min="1" max="5" step="1" required value="{{ values.get('rating', '') }}">
+                Winzer auswählen
+                <select name="winery_id">
+                    <option value="">Bitte auswählen oder neuen Winzer eingeben</option>
+                    {% for winery in wineries %}
+                        <option value="{{ winery.id }}" {% if selected_winery_id == winery.id|string %}selected{% endif %}>
+                            {{ winery.name }}
+                        </option>
+                    {% endfor %}
+                </select>
             </label>
-            <label class="wide">
-                Notizen (optional)
-                <textarea name="notizen" rows="3">{{ values.get('notizen', '') }}</textarea>
+            <label>
+                Oder neuen Winzer anlegen
+                <input name="new_winery" maxlength="100" value="{{ values.get('new_winery', '') }}">
             </label>
-            <button type="submit">Wein speichern</button>
+            <button type="submit">
+                {% if editing_wine %}Änderungen speichern{% else %}Wein speichern{% endif %}
+            </button>
         </form>
 
-        {% if not database_error %}
-        <h2>Erfasste Weine</h2>
-        {% if wines %}
-            <table>
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Rebsorte</th>
-                        <th>Jahrgang</th>
-                        <th>Herkunftsort</th>
-                        <th>Bewertung</th>
-                        <th>Notizen</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for wine in wines %}
+        {% if editing_wine %}
+            <p><a href="{{ url_for('index') }}">Zurück zur Weinliste</a></p>
+        {% elif not database_error %}
+            <h2>Erfasste Weine</h2>
+            {% if wines %}
+                <table>
+                    <thead>
                         <tr>
-                            <td>{{ wine.name }}</td>
-                            <td>{{ wine.rebsorte }}</td>
-                            <td>{{ wine.jahrgang }}</td>
-                            <td>{{ wine.herkunftsort }}</td>
-                            <td>{{ wine.rating }} / 5</td>
-                            <td>{{ wine.notizen or '' }}</td>
+                            <th>Name</th>
+                            <th>Rebsorte</th>
+                            <th>Jahrgang</th>
+                            <th>Herkunftsort</th>
+                            <th>Winzer</th>
+                            <th>Degustationen</th>
+                            <th>Aktionen</th>
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <p>Noch sind keine Weine erfasst.</p>
-        {% endif %}
+                    </thead>
+                    <tbody>
+                        {% for wine in wines %}
+                            <tr>
+                                <td>{{ wine.name }}</td>
+                                <td>{{ wine.rebsorte }}</td>
+                                <td>{{ wine.jahrgang }}</td>
+                                <td>{{ wine.herkunftsort }}</td>
+                                <td>{{ wine.winery_name }}</td>
+                                <td>
+                                    {% if wine.tastings %}
+                                        <ul class="tastings">
+                                            {% for tasting in wine.tastings %}
+                                                <li>
+                                                    {% if tasting.tasting_date %}
+                                                        {{ tasting.tasting_date }}
+                                                    {% else %}
+                                                        Datum unbekannt
+                                                    {% endif %}
+                                                    — {{ tasting.location or 'Ort unbekannt' }}
+                                                    — {{ tasting.rating }} / 5
+                                                    {% if tasting.notes %} — {{ tasting.notes }}{% endif %}
+                                                </li>
+                                            {% endfor %}
+                                        </ul>
+                                    {% else %}
+                                        Noch nicht degustiert
+                                    {% endif %}
+                                    <p>
+                                        <a href="{{ url_for('new_tasting', wine_id=wine.id) }}">
+                                            Degustation hinzufügen
+                                        </a>
+                                    </p>
+                                </td>
+                                <td>
+                                    <a
+                                        class="edit-link"
+                                        href="{{ url_for('edit_wine', wine_id=wine.id) }}"
+                                        title="Bearbeiten"
+                                        aria-label="Bearbeiten"
+                                    >
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                            stroke-width="1.8" stroke-linecap="round"
+                                            stroke-linejoin="round" aria-hidden="true">
+                                            <path d="m16 4 4 4M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16z"></path>
+                                        </svg>
+                                    </a>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>Noch sind keine Weine erfasst.</p>
+            {% endif %}
         {% endif %}
     </main>
 </body>

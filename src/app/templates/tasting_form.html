@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Degustation erfassen</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            line-height: 1.5;
+            margin: 2rem auto;
+            max-width: 48rem;
+            padding: 0 1rem;
+        }
+
+        form {
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+        }
+
+        label {
+            display: grid;
+            gap: 0.3rem;
+        }
+
+        input, textarea, button {
+            font: inherit;
+            padding: 0.5rem;
+        }
+
+        .wide, button {
+            grid-column: 1 / -1;
+        }
+
+        .message {
+            background: #f3f5f2;
+            padding: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Degustation erfassen</h1>
+        <p>
+            <strong>{{ wine.name }}</strong>
+            ({{ wine.jahrgang }}, {{ wine.winery_name }})
+        </p>
+
+        {% if database_error %}
+            <p class="message" role="alert">{{ database_error }}</p>
+        {% endif %}
+        {% if errors %}
+            <div class="message" role="alert">
+                <p>Bitte prüfe die folgenden Meldungen:</p>
+                <ul>
+                    {% for error in errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+
+        <form method="post">
+            <label>
+                Datum
+                <input
+                    name="tasting_date"
+                    type="date"
+                    required
+                    value="{{ values.get('tasting_date', '') }}"
+                >
+            </label>
+            <label>
+                Ort
+                <input
+                    name="location"
+                    maxlength="100"
+                    required
+                    value="{{ values.get('location', '') }}"
+                >
+            </label>
+            <label>
+                Bewertung (1–5)
+                <input
+                    name="rating"
+                    type="number"
+                    min="1"
+                    max="5"
+                    step="1"
+                    required
+                    value="{{ values.get('rating', '') }}"
+                >
+            </label>
+            <label class="wide">
+                Notizen (optional)
+                <textarea name="notes" rows="4">{{ values.get('notes', '') }}</textarea>
+            </label>
+            <button type="submit">Degustation speichern</button>
+        </form>
+
+        <p><a href="{{ url_for('index') }}">Zurück zur Weinliste</a></p>
+    </main>
+</body>
+</html>
