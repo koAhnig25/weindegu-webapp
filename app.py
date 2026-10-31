@@ -5,7 +5,7 @@ from models import db
 
 def create_app():
     app = Flask(__name__)
-    # Konfiguration der SQLite-Datenbank (wird im Hauptordner als 'wines.db' erstellt)
+    # Konfiguration der SQLite-Datenbank als 'wines.db'
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///wines.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
