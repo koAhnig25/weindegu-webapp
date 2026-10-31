@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from collections.abc import Mapping
 from contextlib import closing
@@ -15,12 +16,187 @@ from flask import (
     request,
     url_for,
 )
+from werkzeug.datastructures import MultiDict
 
 WINE_FIELDS = (
     ("name", "Name"),
     ("rebsorte", "Rebsorte"),
     ("herkunftsort", "Herkunftsort"),
 )
+
+TASTING_DETAIL_GROUPS = (
+    {
+        "key": "appearance_intensity",
+        "section": "1. Farbe & Aussehen",
+        "label": "Intensität",
+        "multiple": False,
+        "options": (("pale", "blass"), ("medium", "mittel"), ("deep", "tieffarbig")),
+    },
+    {
+        "key": "appearance_color",
+        "section": "1. Farbe & Aussehen",
+        "label": "Farbe",
+        "multiple": False,
+        "options": (
+            ("lemon_yellow", "zitronengelb"),
+            ("gold_yellow", "goldgelb"),
+            ("purple_red", "purpurrot"),
+            ("ruby_red", "rubinrot"),
+            ("garnet_red", "granatrot"),
+        ),
+    },
+    {
+        "key": "nose_intensity",
+        "section": "2. Geruch / Nase",
+        "label": "Intensität",
+        "multiple": False,
+        "options": (
+            ("neutral", "neutral"),
+            ("medium", "mittel"),
+            ("aromatic", "aromatisch"),
+        ),
+    },
+    {
+        "key": "nose_aromas",
+        "section": "2. Geruch / Nase",
+        "label": "Aromatik",
+        "multiple": True,
+        "options": (
+            ("herbal", "pflanzlich"),
+            ("floral", "blumig"),
+            ("fruity", "fruchtig"),
+            ("overripe", "überreif"),
+            ("buttery", "buttrig"),
+            ("woody", "holzig"),
+            ("spicy", "würzig"),
+            ("earthy", "erdig"),
+        ),
+    },
+    {
+        "key": "taste_sweetness",
+        "section": "3. Geschmack / Gaumen",
+        "label": "Süsse",
+        "multiple": False,
+        "options": (
+            ("dry", "trocken"),
+            ("slightly_sweet", "leicht süss"),
+            ("sweet", "süss"),
+        ),
+    },
+    {
+        "key": "taste_acidity",
+        "section": "3. Geschmack / Gaumen",
+        "label": "Säure",
+        "multiple": False,
+        "options": (("slightly_sour", "etwas sauer"), ("very_sour", "sehr sauer")),
+    },
+    {
+        "key": "taste_tannin",
+        "section": "3. Geschmack / Gaumen",
+        "label": "Tannin",
+        "multiple": False,
+        "options": (
+            ("slightly_astringent", "etwas pelzig"),
+            ("very_astringent", "sehr pelzig"),
+        ),
+    },
+    {
+        "key": "taste_body",
+        "section": "3. Geschmack / Gaumen",
+        "label": "Körper",
+        "multiple": False,
+        "options": (("light", "leicht"), ("medium", "mittel"), ("heavy", "schwer")),
+    },
+    {
+        "key": "taste_balance",
+        "section": "3. Geschmack / Gaumen",
+        "label": "Balance",
+        "multiple": False,
+        "options": (
+            ("hard", "hart"),
+            ("lively", "lebhaft"),
+            ("balanced", "ausgewogen"),
+            ("mild", "mild"),
+            ("clumsy", "plump"),
+        ),
+    },
+    {
+        "key": "taste_aromas",
+        "section": "3. Geschmack / Gaumen",
+        "label": "Aromatik",
+        "multiple": True,
+        "options": (
+            ("herbal", "pflanzlich"),
+            ("floral", "blumig"),
+            ("fruity", "fruchtig"),
+            ("overripe", "überreif"),
+            ("buttery", "buttrig"),
+            ("woody", "holzig"),
+            ("spicy", "würzig"),
+            ("earthy", "erdig"),
+        ),
+    },
+    {
+        "key": "finish_length",
+        "section": "4. Abgang & Gesamteindruck",
+        "label": "Abgang",
+        "multiple": False,
+        "options": (("short", "kurz"), ("medium", "mittel"), ("long", "lang")),
+    },
+    {
+        "key": "overall_impression",
+        "section": "4. Abgang & Gesamteindruck",
+        "label": "Gesamteindruck",
+        "multiple": False,
+        "options": (
+            ("excellent", "hervorragend"),
+            ("very_good", "sehr gut"),
+            ("good", "gut"),
+            ("average", "durchschnittlich"),
+            ("weak", "schwach"),
+        ),
+    },
+)
+
+
+def empty_detailed_tasting() -> dict[str, list[str]]:
+    return {group["key"]: [] for group in TASTING_DETAIL_GROUPS}
+
+
+def load_detailed_tasting(serialized: str | None) -> dict[str, list[str]]:
+    details = empty_detailed_tasting()
+    if not serialized:
+        return details
+
+    try:
+        saved_details = json.loads(serialized)
+    except json.JSONDecodeError:
+        current_app.logger.error("Stored detailed tasting is not valid JSON")
+        abort(500)
+    if not isinstance(saved_details, dict):
+        current_app.logger.error("Stored detailed tasting has an invalid shape")
+        abort(500)
+
+    for group in TASTING_DETAIL_GROUPS:
+        selected = saved_details.get(group["key"], [])
+        allowed_values = {value for value, _label in group["options"]}
+        if (
+            not isinstance(selected, list)
+            or any(value not in allowed_values for value in selected)
+            or (not group["multiple"] and len(selected) > 1)
+        ):
+            current_app.logger.error(
+                "Stored detailed tasting has invalid values for %s", group["key"]
+            )
+            abort(500)
+        details[group["key"]] = selected
+    return details
+
+
+def dump_detailed_tasting(details: dict[str, list[str]]) -> str | None:
+    if not any(details.values()):
+        return None
+    return json.dumps(details, ensure_ascii=False)
 
 
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
@@ -145,6 +321,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 "location": "",
                 "rating": "",
                 "notes": "",
+                "detailed_tasting": empty_detailed_tasting(),
             },
         )
 
@@ -186,6 +363,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
                 "location": tasting["location"] or "",
                 "rating": str(tasting["rating"]),
                 "notes": tasting["notes"] or "",
+                "detailed_tasting": load_detailed_tasting(tasting["detailed_tasting"]),
             },
             editing_tasting=tasting,
         )
@@ -355,9 +533,13 @@ def init_db(app: Flask) -> None:
                 tasting_date TEXT,
                 location VARCHAR(100),
                 rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
-                notes TEXT
+                notes TEXT,
+                detailed_tasting TEXT
             )
             """)
+        tasting_columns = {row[1] for row in db.execute("PRAGMA table_info(tastings)")}
+        if "detailed_tasting" not in tasting_columns:
+            db.execute("ALTER TABLE tastings ADD COLUMN detailed_tasting TEXT")
 
         wine_columns = {row[1] for row in db.execute("PRAGMA table_info(wines)")}
         if "legacy_rating" in wine_columns:
@@ -536,8 +718,8 @@ def save_wine(
 
 
 def validate_tasting_form(
-    form: Mapping[str, str],
-) -> tuple[dict[str, str], list[str]]:
+    form: MultiDict[str, str],
+) -> tuple[dict[str, Any], list[str]]:
     values = {
         "tasting_date": form.get("tasting_date", "").strip(),
         "location": form.get("location", "").strip(),
@@ -545,6 +727,16 @@ def validate_tasting_form(
         "notes": form.get("notes", "").strip(),
     }
     errors = []
+    detailed_tasting = {}
+    for group in TASTING_DETAIL_GROUPS:
+        selected = form.getlist(f"detail_{group['key']}")
+        allowed_values = {value for value, _label in group["options"]}
+        if any(value not in allowed_values for value in selected):
+            errors.append(f"Ungültige Auswahl bei „{group['label']}“.")
+        elif not group["multiple"] and len(selected) > 1:
+            errors.append(f"Bitte wähle bei „{group['label']}“ höchstens eine Option.")
+        detailed_tasting[group["key"]] = selected
+    values["detailed_tasting"] = detailed_tasting
 
     try:
         parsed_date = date.fromisoformat(values["tasting_date"])
@@ -577,7 +769,7 @@ def get_tasting(tasting_id: int) -> sqlite3.Row | None:
         get_db()
         .execute(
             """
-        SELECT id, wine_id, tasting_date, location, rating, notes
+        SELECT id, wine_id, tasting_date, location, rating, notes, detailed_tasting
         FROM tastings
         WHERE id = ?
         """,
@@ -588,11 +780,11 @@ def get_tasting(tasting_id: int) -> sqlite3.Row | None:
 
 
 def save_tasting(
-    form: Mapping[str, str],
+    form: MultiDict[str, str],
     wine_id: int,
     *,
     tasting_id: int | None = None,
-) -> tuple[dict[str, str], list[str], str | None]:
+) -> tuple[dict[str, Any], list[str], str | None]:
     values, errors = validate_tasting_form(form)
     if errors:
         return values, errors, None
@@ -603,8 +795,8 @@ def save_tasting(
             db.execute(
                 """
                 INSERT INTO tastings
-                    (wine_id, tasting_date, location, rating, notes)
-                VALUES (?, ?, ?, ?, ?)
+                    (wine_id, tasting_date, location, rating, notes, detailed_tasting)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     wine_id,
@@ -612,13 +804,15 @@ def save_tasting(
                     values["location"],
                     int(values["rating"]),
                     values["notes"] or None,
+                    dump_detailed_tasting(values["detailed_tasting"]),
                 ),
             )
         else:
             cursor = db.execute(
                 """
                 UPDATE tastings
-                SET tasting_date = ?, location = ?, rating = ?, notes = ?
+                SET tasting_date = ?, location = ?, rating = ?, notes = ?,
+                    detailed_tasting = ?
                 WHERE id = ? AND wine_id = ?
                 """,
                 (
@@ -626,6 +820,7 @@ def save_tasting(
                     values["location"],
                     int(values["rating"]),
                     values["notes"] or None,
+                    dump_detailed_tasting(values["detailed_tasting"]),
                     tasting_id,
                     wine_id,
                 ),
@@ -649,7 +844,7 @@ def save_tasting(
 
 def render_tasting_form(
     wine: sqlite3.Row,
-    values: Mapping[str, str],
+    values: Mapping[str, Any],
     errors: list[str] | None = None,
     *,
     editing_tasting: sqlite3.Row | None = None,
@@ -663,13 +858,16 @@ def render_tasting_form(
         database_error=database_error,
         editing_tasting=editing_tasting,
         today=date.today().isoformat(),
+        tasting_detail_groups=TASTING_DETAIL_GROUPS,
     )
 
 
 def render_tastings_page(database_error: str | None = None):
     tastings = []
     if database_error is None:
-        tastings = get_db().execute("""
+        tastings = (
+            get_db()
+            .execute("""
             SELECT tastings.id, tastings.tasting_date, tastings.location,
                    tastings.rating, tastings.notes, wines.id AS wine_id,
                    wines.name AS wine_name, wines.jahrgang,
@@ -678,7 +876,9 @@ def render_tastings_page(database_error: str | None = None):
             JOIN wines ON wines.id = tastings.wine_id
             JOIN wineries ON wineries.id = wines.winery_id
             ORDER BY tastings.tasting_date DESC, tastings.id DESC
-            """).fetchall()
+            """)
+            .fetchall()
+        )
     return render_template(
         "tastings.html",
         tastings=tastings,

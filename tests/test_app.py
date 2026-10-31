@@ -1,3 +1,5 @@
+import json
+import re
 import sqlite3
 from contextlib import closing
 from datetime import date, timedelta
@@ -485,8 +487,77 @@ def test_tasting_form_shows_selected_wine(client, tmp_path):
 
     assert response.status_code == 200
     assert b"Pinot" in response.data
+    assert b"Kurz-Degu" in response.data
+    assert b"Detail-Degu (optional)" in response.data
+    assert b"1. Farbe &amp; Aussehen" in response.data
+    assert b"2. Geruch / Nase" in response.data
+    assert b"3. Geschmack / Gaumen" in response.data
+    assert b"4. Abgang &amp; Gesamteindruck" in response.data
     assert b'name="tasting_date"' in response.data
     assert b'name="location"' in response.data
+    assert b'name="detail_nose_aromas"' in response.data
+    assert b"[cite:" not in response.data
+
+
+def test_detailed_tasting_saves_single_and_multiple_selections(client, tmp_path):
+    database_path = tmp_path / "wines.db"
+    wine_id = insert_wine(database_path)
+
+    response = client.post(
+        f"/wines/{wine_id}/tastings/new",
+        data={
+            "tasting_date": date.today().isoformat(),
+            "location": "Bern",
+            "rating": "4",
+            "detail_appearance_intensity": "medium",
+            "detail_nose_aromas": ["fruity", "floral"],
+            "detail_taste_acidity": "slightly_sour",
+            "detail_taste_tannin": "very_astringent",
+        },
+    )
+
+    assert response.status_code == 303
+    with closing(sqlite3.connect(database_path)) as db:
+        saved = db.execute("SELECT detailed_tasting FROM tastings").fetchone()[0]
+    assert saved is not None
+    assert json.loads(saved) == {
+        "appearance_intensity": ["medium"],
+        "appearance_color": [],
+        "nose_intensity": [],
+        "nose_aromas": ["fruity", "floral"],
+        "taste_sweetness": [],
+        "taste_acidity": ["slightly_sour"],
+        "taste_tannin": ["very_astringent"],
+        "taste_body": [],
+        "taste_balance": [],
+        "taste_aromas": [],
+        "finish_length": [],
+        "overall_impression": [],
+    }
+
+
+def test_detailed_tasting_rejects_invalid_or_multiple_single_selections(
+    client, tmp_path
+):
+    database_path = tmp_path / "wines.db"
+    wine_id = insert_wine(database_path)
+
+    response = client.post(
+        f"/wines/{wine_id}/tastings/new",
+        data={
+            "tasting_date": date.today().isoformat(),
+            "location": "Bern",
+            "rating": "4",
+            "detail_appearance_intensity": ["medium", "deep"],
+            "detail_nose_aromas": "unknown",
+        },
+    )
+
+    assert response.status_code == 400
+    assert b"h\xc3\xb6chstens eine Option" in response.data
+    assert b"Ung\xc3\xbcltige Auswahl" in response.data
+    with closing(sqlite3.connect(database_path)) as db:
+        assert db.execute("SELECT COUNT(*) FROM tastings").fetchone()[0] == 0
 
 
 def test_tasting_form_limits_date_to_today(client, tmp_path):
@@ -511,6 +582,43 @@ def test_tasting_edit_page_prefills_values_and_has_pencil_action(client, tmp_pat
     assert b'value="Bern"' in response.data
     assert b'value="4"' in response.data
     assert b">Fruchtig</textarea>" in response.data
+
+
+def test_tasting_edit_prefills_detailed_selections(client, tmp_path):
+    database_path = tmp_path / "wines.db"
+    wine_id = insert_wine(database_path)
+    tasting_id = insert_tasting(database_path, wine_id)
+    with closing(sqlite3.connect(database_path)) as db:
+        db.execute(
+            "UPDATE tastings SET detailed_tasting = ? WHERE id = ?",
+            (
+                json.dumps(
+                    {
+                        "appearance_intensity": ["deep"],
+                        "nose_aromas": ["fruity", "woody"],
+                    }
+                ),
+                tasting_id,
+            ),
+        )
+        db.commit()
+
+    response = client.get(f"/tastings/{tasting_id}/edit")
+
+    assert response.status_code == 200
+    for name, value in (
+        (b"detail_appearance_intensity", b"deep"),
+        (b"detail_nose_aromas", b"fruity"),
+        (b"detail_nose_aromas", b"woody"),
+    ):
+        pattern = (
+            rb'<input\b(?=[^>]*\bname="'
+            + name
+            + rb'")(?=[^>]*\bvalue="'
+            + value
+            + rb'")(?=[^>]*\bchecked)[^>]*>'
+        )
+        assert re.search(pattern, response.data)
 
 
 def test_edit_tasting_updates_all_fields_without_adding_another(client, tmp_path):
@@ -655,6 +763,16 @@ def test_existing_wines_migrate_rating_and_notes_to_first_tasting(tmp_path):
             )
             """)
         db.execute("""
+            CREATE TABLE tastings (
+                id INTEGER PRIMARY KEY,
+                wine_id INTEGER NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+                tasting_date TEXT,
+                location VARCHAR(100),
+                rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                notes TEXT
+            )
+            """)
+        db.execute("""
             INSERT INTO wines
                 (id, name, rebsorte, jahrgang, herkunftsort, rating, notizen,
                  winery_id)
@@ -674,9 +792,11 @@ def test_existing_wines_migrate_rating_and_notes_to_first_tasting(tmp_path):
             JOIN wineries ON wineries.id = wines.winery_id
             """).fetchall()
         wine_columns = {row[1] for row in db.execute("PRAGMA table_info(wines)")}
+        tasting_columns = {row[1] for row in db.execute("PRAGMA table_info(tastings)")}
     assert migrated == [(17, "2026-10-31", None, 3, "Alt", "Weingut Alt")]
     assert "rating" not in wine_columns
     assert "notizen" not in wine_columns
+    assert "detailed_tasting" in tasting_columns
 
 
 def test_original_wines_without_winery_are_migrated(tmp_path):
