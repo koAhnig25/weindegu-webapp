@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Weine erfassen</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            line-height: 1.5;
+            margin: 2rem auto;
+            max-width: 56rem;
+            padding: 0 1rem;
+        }
+
+        form {
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+        }
+
+        label {
+            display: grid;
+            gap: 0.3rem;
+        }
+
+        input, textarea, button {
+            font: inherit;
+            padding: 0.5rem;
+        }
+
+        .wide, button {
+            grid-column: 1 / -1;
+        }
+
+        .message {
+            background: #f3f5f2;
+            padding: 0.75rem;
+        }
+
+        table {
+            border-collapse: collapse;
+            margin-top: 1rem;
+            width: 100%;
+        }
+
+        th, td {
+            border-bottom: 1px solid #ccc;
+            padding: 0.5rem;
+            text-align: left;
+            vertical-align: top;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Wein erfassen</h1>
+
+        {% if created %}
+            <p class="message" role="status">Der Wein wurde gespeichert.</p>
+        {% endif %}
+
+        {% if database_error %}
+            <p class="message" role="alert">{{ database_error }}</p>
+        {% endif %}
+
+        {% if errors %}
+            <div class="message" role="alert">
+                <p>Bitte prüfe die folgenden Meldungen:</p>
+                <ul>
+                    {% for error in errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+
+        <form method="post">
+            <label>
+                Name
+                <input name="name" maxlength="100" required value="{{ values.get('name', '') }}">
+            </label>
+            <label>
+                Rebsorte
+                <input name="rebsorte" maxlength="100" required value="{{ values.get('rebsorte', '') }}">
+            </label>
+            <label>
+                Jahrgang
+                <input name="jahrgang" type="number" step="1" required value="{{ values.get('jahrgang', '') }}">
+            </label>
+            <label>
+                Herkunftsort
+                <input name="herkunftsort" maxlength="100" required value="{{ values.get('herkunftsort', '') }}">
+            </label>
+            <label>
+                Bewertung (1–5)
+                <input name="rating" type="number" min="1" max="5" step="1" required value="{{ values.get('rating', '') }}">
+            </label>
+            <label class="wide">
+                Notizen (optional)
+                <textarea name="notizen" rows="3">{{ values.get('notizen', '') }}</textarea>
+            </label>
+            <button type="submit">Wein speichern</button>
+        </form>
+
+        {% if not database_error %}
+        <h2>Erfasste Weine</h2>
+        {% if wines %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Rebsorte</th>
+                        <th>Jahrgang</th>
+                        <th>Herkunftsort</th>
+                        <th>Bewertung</th>
+                        <th>Notizen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for wine in wines %}
+                        <tr>
+                            <td>{{ wine.name }}</td>
+                            <td>{{ wine.rebsorte }}</td>
+                            <td>{{ wine.jahrgang }}</td>
+                            <td>{{ wine.herkunftsort }}</td>
+                            <td>{{ wine.rating }} / 5</td>
+                            <td>{{ wine.notizen or '' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>Noch sind keine Weine erfasst.</p>
+        {% endif %}
+        {% endif %}
+    </main>
+</body>
+</html>
