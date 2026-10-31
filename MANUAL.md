@@ -5,7 +5,7 @@ project template.
 
 When opening this project the first time with VS Code, you might see suggestions
 for extensions to be installed. It is recommended to let VS Code install them
-as they can be helpful for your basic development needs when programming with
+as they can be helpful efor your basic development needs when programming with
 Python.
 
 **IMPORTANT** VS Code will also inform you that this project has an automatic

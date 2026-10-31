@@ -43,3 +43,6 @@ venv/
 
 # MacOS files
 .DS_Store
+
+#Datenbank
+*.db
