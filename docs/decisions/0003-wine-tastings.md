@@ -32,7 +32,8 @@ beliebig viele Degustationen haben.
 Die Wein-Tabelle speichert Name, Rebsorte, Jahrgang, Herkunftsort und Winzer.
 Die Degustation speichert Datum, Ort, Bewertung von 1 bis 5 und optionale
 Notizen. Beim Erfassen einer neuen Degustation sind Datum, Ort und Bewertung
-erforderlich.
+erforderlich. Degustationsdaten dürfen nicht in der Zukunft liegen; der
+Jahrgang eines Weins darf höchstens das aktuelle Kalenderjahr sein.
 
 Die bisherigen Bewertungen und Notizen werden als erste Degustation jedes
 Weins übernommen. Für diese historischen Einträge gilt das bestätigte Datum
@@ -50,4 +51,7 @@ mit einem Fremdschlüssel abzusichern.
 Die bestehende SQLite-Datei wird beim Start erweitert und migriert. Die
 Weinliste zeigt die Degustationen pro Wein; weitere Degustationen können
 hinzugefügt werden, ohne den Weineintrag zu duplizieren. Historische
-Degustationen haben kein bekanntes Ortsfeld.
+Degustationen haben kein bekanntes Ortsfeld. Das Löschen eines Weins entfernt
+seine Degustationen kaskadierend; eine einzelne Degustation kann unabhängig
+gelöscht werden. Die Grenzen für Datum und Jahrgang werden serverseitig
+validiert und zusätzlich in den HTML-Formularen angezeigt.

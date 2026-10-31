@@ -42,7 +42,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.route("/", methods=["GET", "POST"])
     def index():
         if request.method == "POST":
-            values, errors, database_error = save_wine(request.form)
+            values, errors, database_error, _created_wine_id = save_wine(request.form)
             if database_error:
                 return (
                     render_wine_page(
@@ -58,6 +58,32 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
         return render_wine_page({})
 
+    @app.route("/wines/new-for-tasting", methods=["GET", "POST"])
+    def new_wine_for_tasting():
+        if request.method == "POST":
+            values, errors, database_error, wine_id = save_wine(request.form)
+            if database_error:
+                return (
+                    render_wine_page(
+                        values,
+                        [],
+                        database_error=database_error,
+                        form_only=True,
+                    ),
+                    500,
+                )
+            if errors:
+                return (
+                    render_wine_page(values, errors, form_only=True),
+                    400,
+                )
+            if wine_id is None:
+                current_app.logger.error("Wine creation succeeded without an ID")
+                abort(500)
+            return redirect(url_for("new_tasting", wine_id=wine_id), code=303)
+
+        return render_wine_page({}, form_only=True)
+
     @app.route("/wines/<int:wine_id>/edit", methods=["GET", "POST"])
     def edit_wine(wine_id: int):
         wine = get_wine(wine_id)
@@ -65,7 +91,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             abort(404)
 
         if request.method == "POST":
-            values, errors, database_error = save_wine(request.form, wine_id)
+            values, errors, database_error, _created_wine_id = save_wine(
+                request.form, wine_id
+            )
             if database_error:
                 return (
                     render_wine_page(
@@ -98,67 +126,153 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             abort(404)
 
         if request.method == "POST":
-            values, errors = validate_tasting_form(request.form)
-            if errors:
+            values, errors, database_error = save_tasting(request.form, wine_id)
+            if database_error:
                 return (
-                    render_template(
-                        "tasting_form.html",
-                        wine=wine,
-                        values=values,
-                        errors=errors,
-                        database_error=None,
-                    ),
-                    400,
-                )
-
-            try:
-                db = get_db()
-                db.execute(
-                    """
-                    INSERT INTO tastings
-                        (wine_id, tasting_date, location, rating, notes)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        wine_id,
-                        values["tasting_date"],
-                        values["location"],
-                        int(values["rating"]),
-                        values["notes"] or None,
-                    ),
-                )
-                db.commit()
-            except sqlite3.Error:
-                if "db" in g:
-                    g.db.rollback()
-                current_app.logger.exception("Could not save tasting")
-                return (
-                    render_template(
-                        "tasting_form.html",
-                        wine=wine,
-                        values=values,
-                        errors=[],
-                        database_error=(
-                            "Die Degustation konnte wegen eines "
-                            "Datenbankfehlers nicht gespeichert werden."
-                        ),
+                    render_tasting_form(
+                        wine, values, [], database_error=database_error
                     ),
                     500,
                 )
-            return redirect(url_for("index", tasting_created="1"), code=303)
+            if errors:
+                return render_tasting_form(wine, values, errors), 400
+            return redirect(url_for("tastings", tasting_created="1"), code=303)
 
-        return render_template(
-            "tasting_form.html",
-            wine=wine,
-            values={
+        return render_tasting_form(
+            wine,
+            {
                 "tasting_date": date.today().isoformat(),
                 "location": "",
                 "rating": "",
                 "notes": "",
             },
-            errors=[],
-            database_error=None,
         )
+
+    @app.route("/tastings/<int:tasting_id>/edit", methods=["GET", "POST"])
+    def edit_tasting(tasting_id: int):
+        tasting = get_tasting(tasting_id)
+        if tasting is None:
+            abort(404)
+        wine = get_wine(tasting["wine_id"])
+        if wine is None:
+            abort(404)
+
+        if request.method == "POST":
+            values, errors, database_error = save_tasting(
+                request.form, tasting["wine_id"], tasting_id=tasting_id
+            )
+            if database_error:
+                return (
+                    render_tasting_form(
+                        wine,
+                        values,
+                        [],
+                        editing_tasting=tasting,
+                        database_error=database_error,
+                    ),
+                    500,
+                )
+            if errors:
+                return (
+                    render_tasting_form(wine, values, errors, editing_tasting=tasting),
+                    400,
+                )
+            return redirect(url_for("tastings", tasting_updated="1"), code=303)
+
+        return render_tasting_form(
+            wine,
+            {
+                "tasting_date": tasting["tasting_date"] or "",
+                "location": tasting["location"] or "",
+                "rating": str(tasting["rating"]),
+                "notes": tasting["notes"] or "",
+            },
+            editing_tasting=tasting,
+        )
+
+    @app.route("/tastings", methods=["GET"])
+    def tastings():
+        return render_tastings_page()
+
+    @app.route("/tastings/new", methods=["GET", "POST"])
+    def start_tasting():
+        wines = (
+            get_db()
+            .execute("SELECT id, name, jahrgang FROM wines ORDER BY name")
+            .fetchall()
+        )
+        errors: list[str] = []
+        selected_wine_id = ""
+
+        if request.method == "POST":
+            selected_wine_id = request.form.get("wine_id", "").strip()
+            try:
+                wine_id = int(selected_wine_id)
+            except ValueError:
+                errors.append("Bitte wähle einen Wein aus.")
+            else:
+                wine = (
+                    get_db()
+                    .execute("SELECT id FROM wines WHERE id = ?", (wine_id,))
+                    .fetchone()
+                )
+                if wine is None:
+                    errors.append("Der ausgewählte Wein existiert nicht.")
+                else:
+                    return redirect(url_for("new_tasting", wine_id=wine_id), code=303)
+
+        return render_template(
+            "tasting_start.html",
+            wines=wines,
+            errors=errors,
+            selected_wine_id=selected_wine_id,
+        ), (400 if errors else 200)
+
+    @app.post("/wines/<int:wine_id>/delete")
+    def delete_wine(wine_id: int):
+        db = get_db()
+        try:
+            cursor = db.execute("DELETE FROM wines WHERE id = ?", (wine_id,))
+            if cursor.rowcount == 0:
+                abort(404)
+            db.commit()
+        except sqlite3.Error:
+            db.rollback()
+            current_app.logger.exception("Could not delete wine")
+            return (
+                render_wine_page(
+                    {},
+                    [],
+                    database_error=(
+                        "Der Wein konnte wegen eines Datenbankfehlers nicht "
+                        "gelöscht werden."
+                    ),
+                ),
+                500,
+            )
+        return redirect(url_for("index", wine_deleted="1"), code=303)
+
+    @app.post("/tastings/<int:tasting_id>/delete")
+    def delete_tasting(tasting_id: int):
+        db = get_db()
+        try:
+            cursor = db.execute("DELETE FROM tastings WHERE id = ?", (tasting_id,))
+            if cursor.rowcount == 0:
+                abort(404)
+            db.commit()
+        except sqlite3.Error:
+            db.rollback()
+            current_app.logger.exception("Could not delete tasting")
+            return (
+                render_tastings_page(
+                    database_error=(
+                        "Die Degustation konnte wegen eines Datenbankfehlers "
+                        "nicht gelöscht werden."
+                    ),
+                ),
+                500,
+            )
+        return redirect(url_for("tastings", tasting_deleted="1"), code=303)
 
     return app
 
@@ -318,9 +432,12 @@ def validate_wine_form(form: Mapping[str, str]) -> tuple[dict[str, str], list[st
             errors.append(f"{label} darf höchstens 100 Zeichen enthalten.")
 
     try:
-        int(values["jahrgang"])
+        vintage = int(values["jahrgang"])
     except ValueError:
         errors.append("Der Jahrgang muss eine Ganzzahl sein.")
+    else:
+        if vintage > date.today().year:
+            errors.append(f"Der Jahrgang darf höchstens {date.today().year} sein.")
 
     if values["new_winery"] and values["winery_id"]:
         errors.append("Bitte wähle einen Winzer oder gib einen neuen Namen ein.")
@@ -339,12 +456,13 @@ def validate_wine_form(form: Mapping[str, str]) -> tuple[dict[str, str], list[st
 
 def save_wine(
     form: Mapping[str, str], wine_id: int | None = None
-) -> tuple[dict[str, str], list[str], str | None]:
+) -> tuple[dict[str, str], list[str], str | None, int | None]:
     values, errors = validate_wine_form(form)
     if errors:
-        return values, errors, None
+        return values, errors, None, None
 
     db = get_db()
+    created_wine_id = None
     try:
         if values["new_winery"]:
             winery = db.execute(
@@ -366,7 +484,12 @@ def save_wine(
                 (winery_id,),
             ).fetchone()
             if winery is None:
-                return values, ["Der ausgewählte Winzer existiert nicht."], None
+                return (
+                    values,
+                    ["Der ausgewählte Winzer existiert nicht."],
+                    None,
+                    None,
+                )
 
         wine_values = (
             values["name"],
@@ -376,7 +499,7 @@ def save_wine(
             winery_id,
         )
         if wine_id is None:
-            db.execute(
+            cursor = db.execute(
                 """
                 INSERT INTO wines
                     (name, rebsorte, jahrgang, herkunftsort, winery_id)
@@ -384,6 +507,7 @@ def save_wine(
                 """,
                 wine_values,
             )
+            created_wine_id = cursor.lastrowid
         else:
             cursor = db.execute(
                 """
@@ -405,9 +529,10 @@ def save_wine(
             values,
             [],
             "Der Wein konnte wegen eines Datenbankfehlers nicht gespeichert werden.",
+            None,
         )
 
-    return values, [], None
+    return values, [], None, created_wine_id
 
 
 def validate_tasting_form(
@@ -427,6 +552,9 @@ def validate_tasting_form(
             raise ValueError
     except ValueError:
         errors.append("Bitte gib ein gültiges Degustationsdatum an.")
+    else:
+        if parsed_date > date.today():
+            errors.append("Das Degustationsdatum darf nicht in der Zukunft liegen.")
 
     if not values["location"]:
         errors.append("Der Ort ist erforderlich.")
@@ -444,12 +572,130 @@ def validate_tasting_form(
     return values, errors
 
 
+def get_tasting(tasting_id: int) -> sqlite3.Row | None:
+    return (
+        get_db()
+        .execute(
+            """
+        SELECT id, wine_id, tasting_date, location, rating, notes
+        FROM tastings
+        WHERE id = ?
+        """,
+            (tasting_id,),
+        )
+        .fetchone()
+    )
+
+
+def save_tasting(
+    form: Mapping[str, str],
+    wine_id: int,
+    *,
+    tasting_id: int | None = None,
+) -> tuple[dict[str, str], list[str], str | None]:
+    values, errors = validate_tasting_form(form)
+    if errors:
+        return values, errors, None
+
+    db = get_db()
+    try:
+        if tasting_id is None:
+            db.execute(
+                """
+                INSERT INTO tastings
+                    (wine_id, tasting_date, location, rating, notes)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    wine_id,
+                    values["tasting_date"],
+                    values["location"],
+                    int(values["rating"]),
+                    values["notes"] or None,
+                ),
+            )
+        else:
+            cursor = db.execute(
+                """
+                UPDATE tastings
+                SET tasting_date = ?, location = ?, rating = ?, notes = ?
+                WHERE id = ? AND wine_id = ?
+                """,
+                (
+                    values["tasting_date"],
+                    values["location"],
+                    int(values["rating"]),
+                    values["notes"] or None,
+                    tasting_id,
+                    wine_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                db.rollback()
+                abort(404)
+        db.commit()
+    except sqlite3.Error:
+        db.rollback()
+        current_app.logger.exception("Could not save tasting")
+        return (
+            values,
+            [],
+            "Die Degustation konnte wegen eines Datenbankfehlers nicht "
+            "gespeichert werden.",
+        )
+
+    return values, [], None
+
+
+def render_tasting_form(
+    wine: sqlite3.Row,
+    values: Mapping[str, str],
+    errors: list[str] | None = None,
+    *,
+    editing_tasting: sqlite3.Row | None = None,
+    database_error: str | None = None,
+):
+    return render_template(
+        "tasting_form.html",
+        wine=wine,
+        values=values,
+        errors=errors or [],
+        database_error=database_error,
+        editing_tasting=editing_tasting,
+        today=date.today().isoformat(),
+    )
+
+
+def render_tastings_page(database_error: str | None = None):
+    tastings = []
+    if database_error is None:
+        tastings = get_db().execute("""
+            SELECT tastings.id, tastings.tasting_date, tastings.location,
+                   tastings.rating, tastings.notes, wines.id AS wine_id,
+                   wines.name AS wine_name, wines.jahrgang,
+                   wineries.name AS winery_name
+            FROM tastings
+            JOIN wines ON wines.id = tastings.wine_id
+            JOIN wineries ON wineries.id = wines.winery_id
+            ORDER BY tastings.tasting_date DESC, tastings.id DESC
+            """).fetchall()
+    return render_template(
+        "tastings.html",
+        tastings=tastings,
+        database_error=database_error,
+        tasting_created=request.args.get("tasting_created") == "1",
+        tasting_updated=request.args.get("tasting_updated") == "1",
+        tasting_deleted=request.args.get("tasting_deleted") == "1",
+    )
+
+
 def render_wine_page(
     values: Mapping[str, Any],
     errors: list[str] | None = None,
     *,
     editing_wine: sqlite3.Row | None = None,
     database_error: str | None = None,
+    form_only: bool = False,
 ):
     db = get_db()
     selected_winery_id = values.get(
@@ -486,10 +732,15 @@ def render_wine_page(
         created=request.args.get("created") == "1",
         updated=request.args.get("updated") == "1",
         tasting_created=request.args.get("tasting_created") == "1",
+        tasting_updated=request.args.get("tasting_updated") == "1",
+        wine_deleted=request.args.get("wine_deleted") == "1",
+        tasting_deleted=request.args.get("tasting_deleted") == "1",
         database_error=database_error,
         editing_wine=editing_wine,
         selected_winery_id=str(selected_winery_id),
         wineries=wineries,
+        current_year=date.today().year,
+        form_only=form_only,
     )
 
 
