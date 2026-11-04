@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Degustationen</title>
+    <link
+        href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}"
+        rel="stylesheet"
+    >
+    <style>
+        .icon-link svg {
+            height: 1.15rem;
+            width: 1.15rem;
+        }
+
+        .tasting-table {
+            min-width: 46rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand bg-body-tertiary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">Weindegustation</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="{{ url_for('index') }}">Weine</a>
+                <a class="nav-link active" aria-current="page" href="{{ url_for('tastings') }}">
+                    Degustationen
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+            <h1 class="mb-0">Degustationen</h1>
+            <a class="btn btn-primary" href="{{ url_for('start_tasting') }}">
+                Neue Degustation
+            </a>
+        </div>
+
+        {% if tasting_created %}
+            <p class="alert alert-success" role="status">Die Degustation wurde gespeichert.</p>
+        {% endif %}
+        {% if tasting_updated %}
+            <p class="alert alert-success" role="status">Die Degustation wurde aktualisiert.</p>
+        {% endif %}
+        {% if tasting_deleted %}
+            <p class="alert alert-success" role="status">Die Degustation wurde gelöscht.</p>
+        {% endif %}
+        {% if database_error %}
+            <p class="alert alert-danger" role="alert">{{ database_error }}</p>
+        {% endif %}
+
+        {% if tastings %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle tasting-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Datum</th>
+                            <th scope="col">Wein</th>
+                            <th scope="col">Winzer</th>
+                            <th scope="col">Ort</th>
+                            <th scope="col">Bewertung</th>
+                            <th scope="col">Notizen</th>
+                            <th scope="col">Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tasting in tastings %}
+                            <tr>
+                                <td>{{ tasting.tasting_date or 'Unbekannt' }}</td>
+                                <td>
+                                    <a href="{{ url_for('edit_wine', wine_id=tasting.wine_id) }}">
+                                        {{ tasting.wine_name }} ({{ tasting.jahrgang }})
+                                    </a>
+                                </td>
+                                <td>{{ tasting.winery_name }}</td>
+                                <td>{{ tasting.location or 'Unbekannt' }}</td>
+                                <td>{{ tasting.rating }} / 5</td>
+                                <td>{{ tasting.notes or '' }}</td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <a
+                                            class="btn btn-sm btn-outline-secondary icon-link"
+                                            href="{{ url_for('edit_tasting', tasting_id=tasting.id) }}"
+                                            title="Degustation bearbeiten"
+                                            aria-label="Degustation bearbeiten"
+                                        >
+                                            <svg viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="1.8"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round" aria-hidden="true">
+                                                <path d="m16 4 4 4M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16z"></path>
+                                            </svg>
+                                        </a>
+                                        <form
+                                            method="post"
+                                            action="{{ url_for('delete_tasting', tasting_id=tasting.id) }}"
+                                            onsubmit="return confirm('Möchtest du diese Degustation wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.')"
+                                        >
+                                            <button
+                                                class="btn btn-sm btn-outline-danger icon-link"
+                                                type="submit"
+                                                title="Degustation löschen"
+                                                aria-label="Degustation löschen"
+                                            >
+                                                <svg viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="1.8"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round" aria-hidden="true">
+                                                    <path d="M3 6h18"></path>
+                                                    <path d="M8 6V4h8v2"></path>
+                                                    <path d="m19 6-1 14H6L5 6"></path>
+                                                    <path d="M10 11v5M14 11v5"></path>
+                                                </svg>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% elif not database_error %}
+            <p class="text-body-secondary">
+                Noch sind keine Degustationen erfasst. Starte mit „Neue Degustation“.
+            </p>
+        {% endif %}
+    </main>
+</body>
+</html>

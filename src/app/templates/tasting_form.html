@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>
+        {% if editing_tasting %}Degustation bearbeiten{% else %}Degustation erfassen{% endif %}
+    </title>
+    <link
+        href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}"
+        rel="stylesheet"
+    >
+    <style>
+        .tasting-container {
+            max-width: 48rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand bg-body-tertiary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">Weindegustation</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="{{ url_for('index') }}">Weine</a>
+                <a class="nav-link active" aria-current="page" href="{{ url_for('tastings') }}">
+                    Degustationen
+                </a>
+            </div>
+        </div>
+    </nav>
+    <main class="container py-4 tasting-container">
+        <h1 class="mb-3">
+            {% if editing_tasting %}Degustation bearbeiten{% else %}Degustation erfassen{% endif %}
+        </h1>
+        <p class="mb-4">
+            <strong>{{ wine.name }}</strong>
+            ({{ wine.jahrgang }}, {{ wine.winery_name }})
+        </p>
+
+        {% if database_error %}
+            <p class="alert alert-danger" role="alert">{{ database_error }}</p>
+        {% endif %}
+        {% if updated %}
+            <p class="alert alert-success" role="status">Die Degustation wurde aktualisiert.</p>
+        {% endif %}
+        {% if errors %}
+            <div class="alert alert-danger" role="alert">
+                <p>Bitte prüfe die folgenden Meldungen:</p>
+                <ul>
+                    {% for error in errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+
+        {% set form_action = url_for('edit_tasting', tasting_id=editing_tasting.id) if editing_tasting else url_for('new_tasting', wine_id=wine.id) %}
+        <form class="row g-3 mb-4" method="post" action="{{ form_action }}">
+            <label class="col-12 col-md-6">
+                Datum
+                <input
+                    class="form-control"
+                    name="tasting_date"
+                    type="date"
+                    max="{{ today }}"
+                    required
+                    value="{{ values.get('tasting_date', '') }}"
+                >
+            </label>
+            <label class="col-12 col-md-6">
+                Ort
+                <input
+                    class="form-control"
+                    name="location"
+                    maxlength="100"
+                    required
+                    value="{{ values.get('location', '') }}"
+                >
+            </label>
+            <div class="col-12">
+                <h2 class="h4 mb-0">Kurz-Degu</h2>
+            </div>
+            <label class="col-12 col-md-6">
+                Bewertung (1–5)
+                <input
+                    class="form-control"
+                    name="rating"
+                    type="number"
+                    min="1"
+                    max="5"
+                    step="1"
+                    required
+                    value="{{ values.get('rating', '') }}"
+                >
+            </label>
+            <label class="col-12">
+                Notizen (optional)
+                <textarea class="form-control" name="notes" rows="4">{{ values.get('notes', '') }}</textarea>
+            </label>
+            <section class="col-12" aria-labelledby="detailed-tasting-heading">
+                <h2 class="h4" id="detailed-tasting-heading">Detail-Degu (optional)</h2>
+                <p class="text-body-secondary">
+                    Pro Merkmal eine Auswahl; bei Aromatik sind mehrere möglich.
+                </p>
+                <div class="row g-3">
+                    {% set section_state = namespace(current='') %}
+                    {% for group in tasting_detail_groups %}
+                        {% if group.section != section_state.current %}
+                            <h3 class="col-12 h5 mb-0">{{ group.section }}</h3>
+                            {% set section_state.current = group.section %}
+                        {% endif %}
+                        <fieldset class="col-12 col-md-6">
+                            <legend class="fs-6">{{ group.label }}</legend>
+                            {% for option_value, option_label in group.options %}
+                                <div class="form-check">
+                                    <input
+                                        class="form-check-input"
+                                        id="detail-{{ group.key }}-{{ loop.index }}"
+                                        name="detail_{{ group.key }}"
+                                        type="{{ 'checkbox' if group.multiple else 'radio' }}"
+                                        value="{{ option_value }}"
+                                        {% if option_value in values.get('detailed_tasting', {}).get(group.key, []) %}checked{% endif %}
+                                    >
+                                    <label
+                                        class="form-check-label"
+                                        for="detail-{{ group.key }}-{{ loop.index }}"
+                                    >{{ option_label }}</label>
+                                </div>
+                            {% endfor %}
+                        </fieldset>
+                    {% endfor %}
+                </div>
+            </section>
+            <div class="col-12">
+                <button class="btn btn-primary" type="submit">
+                    {% if editing_tasting %}Änderungen speichern{% else %}Degustation speichern{% endif %}
+                </button>
+            </div>
+        </form>
+
+        <p><a class="btn btn-outline-secondary" href="{{ url_for('tastings') }}">Zurück zur Übersicht</a></p>
+    </main>
+</body>
+</html>
