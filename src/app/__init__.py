@@ -452,6 +452,24 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             )
         return redirect(url_for("tastings", tasting_deleted="1"), code=303)
 
+    @app.route("/ranking", methods=["GET"])
+    def ranking():
+        wines = (
+            get_db()
+            .execute("""
+            SELECT wines.id, wines.name, wines.jahrgang, wines.rebsorte,
+                   wineries.name AS winery_name,
+                   ROUND(AVG(tastings.rating), 1) AS avg_rating,
+                   COUNT(tastings.id) AS tasting_count
+            FROM wines
+            JOIN wineries ON wineries.id = wines.winery_id
+            JOIN tastings ON tastings.wine_id = wines.id
+            GROUP BY wines.id
+            ORDER BY avg_rating DESC, tasting_count DESC, wines.name
+            """)
+            .fetchall()
+        )
+        return render_template("ranking.html", wines=wines)
     return app
 
 
