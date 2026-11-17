@@ -60,6 +60,19 @@ def test_home_page_shows_empty_state_and_wine_form(client):
     assert b'name="rating"' not in response.data
 
 
+def test_navigation_shows_visible_mode_buttons(client):
+    wine_page = client.get("/")
+    tasting_page = client.get("/tastings")
+
+    assert wine_page.status_code == 200
+    assert tasting_page.status_code == 200
+    assert b"Weinmodus" in wine_page.data
+    assert b"Degustationsmodus" in wine_page.data
+    assert b"btn-primary" in wine_page.data
+    assert b"Weinmodus" in tasting_page.data
+    assert b"Degustationsmodus" in tasting_page.data
+
+
 def test_wine_year_form_sets_maximum_to_current_year(client):
     response = client.get("/")
 
