@@ -55,7 +55,7 @@
                             {% else %}{{ loop.index }}
                             {% endif %}
                         </td>
-                        <td><strong>{{ wine.name }}</strong> {{ wine.jahrgang }}</td>
+                        <td><a href="{{ url_for('wine_profile', wine_id=wine.id) }}"><strong>{{ wine.name }}</strong></a> {{ wine.jahrgang }}</td>
                         <td>{{ wine.rebsorte }}</td>
                         <td>{{ wine.winery_name }}</td>
                         <td>
