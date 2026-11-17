@@ -212,6 +212,7 @@ def test_post_stores_summer_weather_summary(client, tmp_path, monkeypatch):
         lambda location, year: {
             "status": "ready",
             "summary": "Ø 21.0 °C und 300 mm Niederschlag (Juni–August 2022)",
+            "assessment": "Ausgewogen: moderate Wärme und Niederschläge.",
             "latitude": 47.37,
             "longitude": 8.54,
         },
@@ -231,10 +232,11 @@ def test_post_stores_summer_weather_summary(client, tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert "300 mm Niederschlag".encode() in response.data
+    assert "Ausgewogen: moderate Wärme und Niederschläge.".encode() in response.data
     with closing(sqlite3.connect(tmp_path / "wines.db")) as db:
         saved_weather = db.execute(
             """
-            SELECT weather_summary, weather_status,
+            SELECT weather_summary, weather_assessment, weather_status,
                    weather_latitude, weather_longitude
             FROM wines
             WHERE name = 'Pinot Noir'
@@ -242,10 +244,30 @@ def test_post_stores_summer_weather_summary(client, tmp_path, monkeypatch):
         ).fetchone()
     assert saved_weather == (
         "Ø 21.0 °C und 300 mm Niederschlag (Juni–August 2022)",
+        "Ausgewogen: moderate Wärme und Niederschläge.",
         "ready",
         47.37,
         8.54,
     )
+
+
+@pytest.mark.parametrize(
+    ("temperature", "precipitation", "expected_text"),
+    [
+        (26.0, 100.0, "Sehr warm und trocken"),
+        (26.0, 500.0, "Sehr warm und niederschlagsreich"),
+        (20.0, 300.0, "Ausgewogen"),
+        (10.0, 500.0, "Kühl und niederschlagsreich"),
+    ],
+)
+def test_summer_weather_assessment_covers_risk_profiles(
+    temperature,
+    precipitation,
+    expected_text,
+):
+    assessment = app_module.assess_summer_weather(temperature, precipitation)
+
+    assert expected_text in assessment
 
 
 def test_post_reuses_winery_without_creating_case_variant_duplicate(client, tmp_path):

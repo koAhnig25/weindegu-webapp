@@ -121,6 +121,12 @@
                 <p class="alert alert-info">
                     <strong>Sommerwetter:</strong> {{ editing_wine.weather_summary }}
                 </p>
+                {% if editing_wine.weather_assessment %}
+                    <p class="alert alert-secondary">
+                        <strong>Grobe Einschätzung für den Jahrgang:</strong>
+                        {{ editing_wine.weather_assessment }}
+                    </p>
+                {% endif %}
             {% elif editing_wine.weather_status == "location_not_found" %}
                 <p class="alert alert-warning">
                     Für den Herkunftsort konnte kein Wetterstandort gefunden werden.
@@ -165,6 +171,11 @@
                                 <td>
                                     {% if wine.weather_summary %}
                                         {{ wine.weather_summary }}
+                                        {% if wine.weather_assessment %}
+                                            <div class="small text-body-secondary mt-1">
+                                                {{ wine.weather_assessment }}
+                                            </div>
+                                        {% endif %}
                                     {% elif wine.weather_status == "location_not_found" %}
                                         Ort nicht gefunden
                                     {% elif wine.weather_status == "api_error" %}

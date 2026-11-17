@@ -566,6 +566,7 @@ def init_db(app: Flask) -> None:
         wine_columns = {row[1] for row in db.execute("PRAGMA table_info(wines)")}
         weather_columns = {
             "weather_summary": "TEXT",
+            "weather_assessment": "TEXT",
             "weather_status": "TEXT",
             "weather_latitude": "REAL",
             "weather_longitude": "REAL",
@@ -592,6 +593,7 @@ def create_wines_table(db: sqlite3.Connection) -> None:
             legacy_rating INTEGER,
             legacy_notes TEXT,
             weather_summary TEXT,
+            weather_assessment TEXT,
             weather_status TEXT,
             weather_latitude REAL,
             weather_longitude REAL,
@@ -607,7 +609,7 @@ def get_wine(wine_id: int) -> sqlite3.Row | None:
             """
         SELECT wines.id, wines.name, wines.rebsorte, wines.jahrgang,
                    wines.herkunftsort, wines.winery_id, wineries.name AS winery_name,
-                   wines.weather_summary, wines.weather_status
+                   wines.weather_summary, wines.weather_assessment, wines.weather_status
         FROM wines
         JOIN wineries ON wineries.id = wines.winery_id
         WHERE wines.id = ?
@@ -657,6 +659,50 @@ def validate_wine_form(form: Mapping[str, str]) -> tuple[dict[str, str], list[st
             errors.append("Bitte wähle einen gültigen Winzer aus.")
 
     return values, errors
+
+
+def assess_summer_weather(average_temperature: float, total_precipitation: float) -> str:
+    if average_temperature >= 25:
+        if total_precipitation < 150:
+            return (
+                "Sehr warm und trocken: überwiegend gute Reifechance, "
+                "aber mögliche Trockenstress- oder Hitzeschwierigkeiten."
+            )
+        if total_precipitation > 450:
+            return (
+                "Sehr warm und niederschlagsreich: Reife möglich, "
+                "aber erhöhte Pilz- und Fäulnisgefahr."
+            )
+        return (
+            "Sehr warm: grundsätzlich gute Reifebedingungen, "
+            "jedoch erhöhte Hitzebelastung für die Reben."
+        )
+
+    if average_temperature <= 12:
+        if total_precipitation > 450:
+            return (
+                "Kühl und niederschlagsreich: schwierigere Reife, "
+                "mit höherem Risiko für nasse oder grüne Töne."
+            )
+        return (
+            "Kühl: Reife kann verzögert verlaufen; "
+            "dies kann aber bei passender Rebsorte auch zu frischer Säure führen."
+        )
+
+    if total_precipitation < 150:
+        return (
+            "Trocken: Reife ist grundsätzlich möglich, "
+            "doch Wassermangel kann Ertrag und Aroma beeinträchtigen."
+        )
+    if total_precipitation > 450:
+        return (
+            "Niederschlagsreich: es sind kontrollierte Fäulnisrisiken und "
+            "eher schwierige Reifebedingungen möglich."
+        )
+    return (
+        "Ausgewogen: moderate Wärme und Niederschläge; "
+        "für viele Anbaugebiete grundsätzlich gute Reifebedingungen."
+    )
 
 
 def fetch_summer_weather(location: str, year: int) -> dict[str, Any]:
@@ -741,6 +787,10 @@ def fetch_summer_weather(location: str, year: int) -> dict[str, Any]:
         return {
             "status": "ready",
             "summary": summary,
+            "assessment": assess_summer_weather(
+                average_temperature,
+                total_precipitation,
+            ),
             "latitude": latitude,
             "longitude": longitude,
         }
@@ -855,6 +905,7 @@ def save_wine(
                 """
                 UPDATE wines
                 SET weather_summary = ?,
+                    weather_assessment = ?,
                     weather_status = ?,
                     weather_latitude = ?,
                     weather_longitude = ?,
@@ -863,6 +914,7 @@ def save_wine(
                 """,
                 (
                     weather.get("summary"),
+                    weather.get("assessment"),
                     weather["status"],
                     weather.get("latitude"),
                     weather.get("longitude"),
@@ -1077,7 +1129,8 @@ def render_wine_page(
             wine_rows = db.execute("""
                 SELECT wines.id, wines.name, wines.rebsorte, wines.jahrgang,
                        wines.herkunftsort, wineries.name AS winery_name,
-                       wines.weather_summary, wines.weather_status
+                       wines.weather_summary, wines.weather_assessment,
+                       wines.weather_status
                 FROM wines
                 JOIN wineries ON wineries.id = wines.winery_id
                 ORDER BY wines.id DESC

@@ -37,6 +37,8 @@ Optionales Seed-Skript für Beispieldaten:
 Beim Speichern eines Weins lädt die Anwendung einmalig das historische
 Wetter für Juni bis August des Jahrgangs am Herkunftsort. Die Zusammenfassung
 enthält die mittlere Tagestemperatur und die gesamte Niederschlagsmenge.
+Zusätzlich wird eine grobe Einschätzung zu Wärme- und Niederschlagsrisiken
+für den Jahrgang angezeigt.
 Geocoding und Wetterdaten werden über die öffentlichen Open-Meteo-APIs
 bezogen. Die Ergebnisse werden in der SQLite-Datenbank gespeichert.
 

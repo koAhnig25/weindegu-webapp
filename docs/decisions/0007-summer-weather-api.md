@@ -25,6 +25,8 @@ The application uses the public Open-Meteo Geocoding API and Open-Meteo Archive
 API. It stores the resulting June-to-August summary once on the wine record.
 The summary is refreshed only if the year or origin changes or no result was
 stored yet.
+The weather summary also receives a short, conservative assessment based only
+on average summer temperature and total precipitation.
 
 ## Reasons
 
