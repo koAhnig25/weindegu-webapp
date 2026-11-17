@@ -24,8 +24,21 @@ this:
 or on a Windows host
 
 ```powershell
+    $env:PYTHONPATH="$PWD\src"
     uv run waitress-serve app:app
 ```
+
+Optionales Seed-Skript für Beispieldaten:
+
+```powershell
+    uv run seed.py
+```
+
+Beim Speichern eines Weins lädt die Anwendung einmalig das historische
+Wetter für Juni bis August des Jahrgangs am Herkunftsort. Die Zusammenfassung
+enthält die mittlere Tagestemperatur und die gesamte Niederschlagsmenge.
+Geocoding und Wetterdaten werden über die öffentlichen Open-Meteo-APIs
+bezogen. Die Ergebnisse werden in der SQLite-Datenbank gespeichert.
 
 In other cases the user might have to install some project dependencies first
 and has to run something like this (a pyproject.toml file is also included in

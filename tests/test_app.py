@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 import pytest
 
+import app as app_module
 from app import create_app
 
 
@@ -197,6 +198,54 @@ def test_post_saves_wine_separately_from_tastings(client, tmp_path):
     assert saved == ("Pinot Noir", "Blauburgunder", 2022, "Zuerich")
     assert winery == ("Weingut Beispiel",)
     assert tasting_count == 0
+
+
+def test_post_stores_summer_weather_summary(client, tmp_path, monkeypatch):
+    monkeypatch.setitem(
+        client.application.config,
+        "WEATHER_API_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        app_module,
+        "fetch_summer_weather",
+        lambda location, year: {
+            "status": "ready",
+            "summary": "Ø 21.0 °C und 300 mm Niederschlag (Juni–August 2022)",
+            "latitude": 47.37,
+            "longitude": 8.54,
+        },
+    )
+
+    response = client.post(
+        "/",
+        data={
+            "name": "Pinot Noir",
+            "rebsorte": "Blauburgunder",
+            "jahrgang": "2022",
+            "herkunftsort": "Zuerich",
+            "winery_id": "1",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "300 mm Niederschlag".encode() in response.data
+    with closing(sqlite3.connect(tmp_path / "wines.db")) as db:
+        saved_weather = db.execute(
+            """
+            SELECT weather_summary, weather_status,
+                   weather_latitude, weather_longitude
+            FROM wines
+            WHERE name = 'Pinot Noir'
+            """
+        ).fetchone()
+    assert saved_weather == (
+        "Ø 21.0 °C und 300 mm Niederschlag (Juni–August 2022)",
+        "ready",
+        47.37,
+        8.54,
+    )
 
 
 def test_post_reuses_winery_without_creating_case_variant_duplicate(client, tmp_path):

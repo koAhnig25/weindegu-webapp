@@ -1,51 +1,103 @@
-# seed.py
-from models import Wine, db
+import sqlite3
 
-from app import app
+from app import create_app, init_db
 
 
-def seed_database():
-    # Wir brauchen den App-Kontext, um auf die Datenbank zuzugreifen
-    with app.app_context():
-        print("Lösche alte Tabellen (falls vorhanden)...")
-        db.drop_all()
+def seed_database() -> None:
+    app = create_app()
+    database_path = app.config["DATABASE"]
 
-        print("Erstelle neue Tabellen...")
-        db.create_all()
+    init_db(app)
+    with sqlite3.connect(database_path) as db:
+        db.execute("PRAGMA foreign_keys = ON")
+        db.execute("DELETE FROM tastings")
+        db.execute("DELETE FROM wines")
+        db.execute("DELETE FROM wineries")
 
-        print("Füge Testdatensätze ein...")
-        weine = [
-            Wine(
-                name="Château Margaux",
-                rebsorte="Cabernet Sauvignon",
-                jahrgang=2015,
-                herkunftsort="Bordeaux",  # Findet die Wetter-API!
-                rating=5,
-                notizen="Hervorragender Jahrgang, sehr komplex.",
+        wineries = (
+            ("Unbekannt",),
+            ("Chateau Margaux",),
+            ("Maienfelder Weinbau",),
+            ("Chianti Classico",),
+        )
+        db.executemany("INSERT INTO wineries (name) VALUES (?)", wineries)
+
+        winery_ids = {
+            row[1]: row[0]
+            for row in db.execute("SELECT id, name FROM wineries")
+        }
+        wines = (
+            (
+                "Chateau Margaux",
+                "Cabernet Sauvignon",
+                2015,
+                "Bordeaux",
+                winery_ids["Chateau Margaux"],
             ),
-            Wine(
-                name="Maienfelder Pinot Noir",
-                rebsorte="Pinot Noir",
-                jahrgang=2021,
-                herkunftsort="Maienfeld",  # Schweizer Testfall
-                rating=4,
-                notizen="Fruchtig, leicht, perfekt für den Sommer.",
+            (
+                "Maienfelder Pinot Noir",
+                "Pinot Noir",
+                2021,
+                "Maienfeld",
+                winery_ids["Maienfelder Weinbau"],
             ),
-            Wine(
-                name="Chianti Classico",
-                rebsorte="Sangiovese",
-                jahrgang=2019,
-                herkunftsort="Florenz",
-                rating=3,
-                notizen="Solider Alltagswein, gute Säurestruktur.",
+            (
+                "Chianti Classico",
+                "Sangiovese",
+                2019,
+                "Florenz",
+                winery_ids["Chianti Classico"],
             ),
-        ]
+        )
+        db.executemany(
+            """
+            INSERT INTO wines
+                (name, rebsorte, jahrgang, herkunftsort, winery_id)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            wines,
+        )
 
-        # Fügt alle Weine zur Session hinzu und speichert sie in der DB
-        db.session.add_all(weine)
-        db.session.commit()
+        wine_ids = {
+            row[1]: row[0]
+            for row in db.execute("SELECT id, name FROM wines")
+        }
+        tastings = (
+            (
+                wine_ids["Chateau Margaux"],
+                "2026-10-31",
+                "Bordeaux",
+                5,
+                "Hervorragender Jahrgang, sehr komplex.",
+                None,
+            ),
+            (
+                wine_ids["Maienfelder Pinot Noir"],
+                "2026-10-31",
+                "Maienfeld",
+                4,
+                "Fruchtig, leicht, perfekt fuer den Sommer.",
+                None,
+            ),
+            (
+                wine_ids["Chianti Classico"],
+                "2026-10-31",
+                "Florenz",
+                3,
+                "Solider Alltagswein, gute Saeurestruktur.",
+                None,
+            ),
+        )
+        db.executemany(
+            """
+            INSERT INTO tastings
+                (wine_id, tasting_date, location, rating, notes, detailed_tasting)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            tastings,
+        )
 
-        print("Erfolgreich! Datenbank 'wines.db' wurde erstellt und befüllt.")
+    print("Datenbank wurde mit 3 Beispielweinen und 3 Degustationen gefuellt.")
 
 
 if __name__ == "__main__":

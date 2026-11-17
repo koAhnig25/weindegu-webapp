@@ -117,6 +117,19 @@
         </form>
 
         {% if editing_wine %}
+            {% if editing_wine.weather_summary %}
+                <p class="alert alert-info">
+                    <strong>Sommerwetter:</strong> {{ editing_wine.weather_summary }}
+                </p>
+            {% elif editing_wine.weather_status == "location_not_found" %}
+                <p class="alert alert-warning">
+                    Für den Herkunftsort konnte kein Wetterstandort gefunden werden.
+                </p>
+            {% elif editing_wine.weather_status == "api_error" %}
+                <p class="alert alert-warning">
+                    Das Sommerwetter konnte derzeit nicht geladen werden.
+                </p>
+            {% endif %}
             <p><a class="btn btn-outline-secondary" href="{{ url_for('index') }}">Zurück zur Weinliste</a></p>
         {% elif form_only %}
             <p>
@@ -136,6 +149,7 @@
                             <th>Jahrgang</th>
                             <th>Herkunftsort</th>
                             <th>Winzer</th>
+                            <th>Sommerwetter</th>
                             <th>Degustationen</th>
                             <th>Aktionen</th>
                         </tr>
@@ -148,6 +162,17 @@
                                 <td>{{ wine.jahrgang }}</td>
                                 <td>{{ wine.herkunftsort }}</td>
                                 <td>{{ wine.winery_name }}</td>
+                                <td>
+                                    {% if wine.weather_summary %}
+                                        {{ wine.weather_summary }}
+                                    {% elif wine.weather_status == "location_not_found" %}
+                                        Ort nicht gefunden
+                                    {% elif wine.weather_status == "api_error" %}
+                                        Wetterdaten nicht verfügbar
+                                    {% else %}
+                                        Noch nicht geladen
+                                    {% endif %}
+                                </td>
                                 <td>
                                     {% if wine.tastings %}
                                         <ul class="list-unstyled mb-0">

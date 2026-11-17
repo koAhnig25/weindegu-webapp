@@ -2,9 +2,12 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from contextlib import closing
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 from flask import (
     Flask,
@@ -560,6 +563,20 @@ def init_db(app: Flask) -> None:
             db.execute("ALTER TABLE wines DROP COLUMN rating")
             db.execute("ALTER TABLE wines DROP COLUMN notizen")
 
+        wine_columns = {row[1] for row in db.execute("PRAGMA table_info(wines)")}
+        weather_columns = {
+            "weather_summary": "TEXT",
+            "weather_status": "TEXT",
+            "weather_latitude": "REAL",
+            "weather_longitude": "REAL",
+            "weather_fetched_at": "TEXT",
+        }
+        for column_name, column_type in weather_columns.items():
+            if column_name not in wine_columns:
+                db.execute(
+                    f"ALTER TABLE wines ADD COLUMN {column_name} {column_type}"
+                )
+
         db.commit()
 
 
@@ -573,7 +590,12 @@ def create_wines_table(db: sqlite3.Connection) -> None:
             herkunftsort VARCHAR(100) NOT NULL,
             winery_id INTEGER NOT NULL REFERENCES wineries(id),
             legacy_rating INTEGER,
-            legacy_notes TEXT
+            legacy_notes TEXT,
+            weather_summary TEXT,
+            weather_status TEXT,
+            weather_latitude REAL,
+            weather_longitude REAL,
+            weather_fetched_at TEXT
         )
         """)
 
@@ -584,7 +606,8 @@ def get_wine(wine_id: int) -> sqlite3.Row | None:
         .execute(
             """
         SELECT wines.id, wines.name, wines.rebsorte, wines.jahrgang,
-               wines.herkunftsort, wines.winery_id, wineries.name AS winery_name
+                   wines.herkunftsort, wines.winery_id, wineries.name AS winery_name,
+                   wines.weather_summary, wines.weather_status
         FROM wines
         JOIN wineries ON wineries.id = wines.winery_id
         WHERE wines.id = ?
@@ -636,6 +659,96 @@ def validate_wine_form(form: Mapping[str, str]) -> tuple[dict[str, str], list[st
     return values, errors
 
 
+def fetch_summer_weather(location: str, year: int) -> dict[str, Any]:
+    try:
+        location_candidates = [location]
+        umlaut_location = (
+            location.replace("ae", "ä")
+            .replace("Ae", "Ä")
+            .replace("oe", "ö")
+            .replace("Oe", "Ö")
+            .replace("ue", "ü")
+            .replace("Ue", "Ü")
+        )
+        if umlaut_location != location:
+            location_candidates.append(umlaut_location)
+
+        results = []
+        for candidate in location_candidates:
+            geocoding_query = urlencode(
+                {
+                    "name": candidate,
+                    "count": 1,
+                    "language": "de",
+                    "format": "json",
+                }
+            )
+            with urlopen(
+                f"https://geocoding-api.open-meteo.com/v1/search?{geocoding_query}",
+                timeout=8,
+            ) as response:
+                geocoding = json.loads(response.read().decode("utf-8"))
+            results = geocoding.get("results") or []
+            if results:
+                break
+        if not results:
+            return {"status": "location_not_found", "summary": None}
+
+        latitude = results[0]["latitude"]
+        longitude = results[0]["longitude"]
+        weather_query = urlencode(
+            {
+                "latitude": latitude,
+                "longitude": longitude,
+                "start_date": f"{year}-06-01",
+                "end_date": f"{year}-08-31",
+                "daily": "temperature_2m_mean,precipitation_sum",
+                "timezone": "auto",
+            }
+        )
+        with urlopen(
+            f"https://archive-api.open-meteo.com/v1/archive?{weather_query}",
+            timeout=8,
+        ) as response:
+            weather = json.loads(response.read().decode("utf-8"))
+
+        daily = weather.get("daily") or {}
+        temperatures = [
+            value
+            for value in daily.get("temperature_2m_mean", [])
+            if value is not None
+        ]
+        precipitation = [
+            value
+            for value in daily.get("precipitation_sum", [])
+            if value is not None
+        ]
+        if not temperatures or not precipitation:
+            return {
+                "status": "api_error",
+                "summary": None,
+                "latitude": latitude,
+                "longitude": longitude,
+            }
+
+        average_temperature = sum(temperatures) / len(temperatures)
+        total_precipitation = sum(precipitation)
+        summary = (
+            f"Ø {average_temperature:.1f} °C und "
+            f"{total_precipitation:.0f} mm Niederschlag "
+            f"(Juni–August {year})"
+        )
+        return {
+            "status": "ready",
+            "summary": summary,
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, KeyError):
+        current_app.logger.exception("Could not fetch historical summer weather")
+        return {"status": "api_error", "summary": None}
+
+
 def save_wine(
     form: Mapping[str, str], wine_id: int | None = None
 ) -> tuple[dict[str, str], list[str], str | None, int | None]:
@@ -645,6 +758,16 @@ def save_wine(
 
     db = get_db()
     created_wine_id = None
+    existing_wine = None
+    if wine_id is not None:
+        existing_wine = db.execute(
+            """
+            SELECT jahrgang, herkunftsort, weather_status
+            FROM wines
+            WHERE id = ?
+            """,
+            (wine_id,),
+        ).fetchone()
     try:
         if values["new_winery"]:
             winery = db.execute(
@@ -704,6 +827,50 @@ def save_wine(
                 db.rollback()
                 abort(404)
         db.commit()
+
+        saved_wine_id = created_wine_id if wine_id is None else wine_id
+        location_changed = (
+            existing_wine is None
+            or existing_wine["jahrgang"] != int(values["jahrgang"])
+            or existing_wine["herkunftsort"] != values["herkunftsort"]
+        )
+        should_fetch_weather = (
+            saved_wine_id is not None
+            and current_app.config.get(
+                "WEATHER_API_ENABLED",
+                not current_app.config.get("TESTING", False),
+            )
+            and (
+                wine_id is None
+                or location_changed
+                or existing_wine["weather_status"] is None
+            )
+        )
+        if should_fetch_weather:
+            weather = fetch_summer_weather(
+                values["herkunftsort"],
+                int(values["jahrgang"]),
+            )
+            db.execute(
+                """
+                UPDATE wines
+                SET weather_summary = ?,
+                    weather_status = ?,
+                    weather_latitude = ?,
+                    weather_longitude = ?,
+                    weather_fetched_at = ?
+                WHERE id = ?
+                """,
+                (
+                    weather.get("summary"),
+                    weather["status"],
+                    weather.get("latitude"),
+                    weather.get("longitude"),
+                    datetime.now(timezone.utc).isoformat(),
+                    saved_wine_id,
+                ),
+            )
+            db.commit()
     except sqlite3.Error:
         db.rollback()
         current_app.logger.exception("Could not save wine")
@@ -909,7 +1076,8 @@ def render_wine_page(
         if editing_wine is None:
             wine_rows = db.execute("""
                 SELECT wines.id, wines.name, wines.rebsorte, wines.jahrgang,
-                       wines.herkunftsort, wineries.name AS winery_name
+                       wines.herkunftsort, wineries.name AS winery_name,
+                       wines.weather_summary, wines.weather_status
                 FROM wines
                 JOIN wineries ON wineries.id = wines.winery_id
                 ORDER BY wines.id DESC
