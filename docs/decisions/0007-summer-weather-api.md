@@ -10,8 +10,9 @@ Accepted
 
 The application should show historical summer weather for a wine based on its
 vintage year and origin location. The first version needs only a short summary
-covering June through August. It should remain understandable and avoid a
-costly or complex weather integration.
+covering the three summer months, June through August north of the equator and
+February through April south of the equator. It should remain understandable
+and avoid a costly or complex weather integration.
 
 ## Options Considered
 
@@ -22,11 +23,15 @@ costly or complex weather integration.
 ## Decision
 
 The application uses the public Open-Meteo Geocoding API and Open-Meteo Archive
-API. It stores the resulting June-to-August summary once on the wine record.
+API. It stores the resulting summer summary once on the wine record. The period
+is June through August north of the equator and February through April south
+of the equator.
 The summary is refreshed only if the year or origin changes or no result was
 stored yet.
 The weather summary also receives a short, conservative assessment based only
 on average summer temperature and total precipitation.
+Existing wines can refresh both values through a dedicated POST action in the
+wine list. This is useful for records created before weather support existed.
 
 ## Reasons
 

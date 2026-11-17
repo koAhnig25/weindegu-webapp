@@ -62,6 +62,16 @@
         {% if tasting_deleted %}
             <p class="alert alert-success" role="status">Die Degustation wurde gelöscht.</p>
         {% endif %}
+        {% if weather_refreshed %}
+            <p class="alert alert-success" role="status">
+                Wetterdaten und Einschätzung wurden aktualisiert.
+            </p>
+        {% endif %}
+        {% if weather_error %}
+            <p class="alert alert-warning" role="alert">
+                Wetterdaten konnten nicht aktualisiert werden. Bitte versuche es erneut.
+            </p>
+        {% endif %}
         {% if database_error %}
             <p class="alert alert-danger" role="alert">{{ database_error }}</p>
         {% endif %}
@@ -258,6 +268,25 @@
                                 </td>
                                 <td>
                                     <div class="d-flex align-items-center gap-1">
+                                        <form
+                                            class="d-inline-flex"
+                                            method="post"
+                                            action="{{ url_for('refresh_wine_weather', wine_id=wine.id) }}"
+                                        >
+                                            <button
+                                                class="btn btn-sm btn-outline-primary icon-link"
+                                                type="submit"
+                                                title="Wetterdaten aktualisieren"
+                                                aria-label="Wetterdaten für {{ wine.name }} aktualisieren"
+                                            >
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                    stroke-width="1.8" stroke-linecap="round"
+                                                    stroke-linejoin="round" aria-hidden="true">
+                                                    <path d="M20 11a8 8 0 1 0-2.34 5.66"></path>
+                                                    <path d="M20 4v7h-7"></path>
+                                                </svg>
+                                            </button>
+                                        </form>
                                         <a
                                             class="btn btn-sm btn-outline-secondary icon-link"
                                             href="{{ url_for('edit_wine', wine_id=wine.id) }}"

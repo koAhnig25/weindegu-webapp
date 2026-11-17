@@ -409,6 +409,56 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             selected_wine_id=selected_wine_id,
         ), (400 if errors else 200)
 
+    @app.post("/wines/<int:wine_id>/weather/refresh")
+    def refresh_wine_weather(wine_id: int):
+        db = get_db()
+        wine = db.execute(
+            """
+            SELECT jahrgang, herkunftsort
+            FROM wines
+            WHERE id = ?
+            """,
+            (wine_id,),
+        ).fetchone()
+        if wine is None:
+            abort(404)
+
+        weather = fetch_summer_weather(
+            wine["herkunftsort"],
+            wine["jahrgang"],
+        )
+        try:
+            db.execute(
+                """
+                UPDATE wines
+                SET weather_summary = ?,
+                    weather_assessment = ?,
+                    weather_status = ?,
+                    weather_latitude = ?,
+                    weather_longitude = ?,
+                    weather_fetched_at = ?
+                WHERE id = ?
+                """,
+                (
+                    weather.get("summary"),
+                    weather.get("assessment"),
+                    weather["status"],
+                    weather.get("latitude"),
+                    weather.get("longitude"),
+                    datetime.now(timezone.utc).isoformat(),
+                    wine_id,
+                ),
+            )
+            db.commit()
+        except sqlite3.Error:
+            db.rollback()
+            current_app.logger.exception("Could not store refreshed weather")
+            return redirect(url_for("index", weather_error="1"), code=303)
+
+        if weather["status"] == "ready":
+            return redirect(url_for("index", weather_refreshed="1"), code=303)
+        return redirect(url_for("index", weather_error="1"), code=303)
+
     @app.post("/wines/<int:wine_id>/delete")
     def delete_wine(wine_id: int):
         db = get_db()
@@ -661,6 +711,12 @@ def validate_wine_form(form: Mapping[str, str]) -> tuple[dict[str, str], list[st
     return values, errors
 
 
+def get_summer_period(latitude: float, year: int) -> tuple[str, str, str]:
+    if latitude < 0:
+        return f"{year}-02-01", f"{year}-04-30", "Februar–April"
+    return f"{year}-06-01", f"{year}-08-31", "Juni–August"
+
+
 def assess_summer_weather(average_temperature: float, total_precipitation: float) -> str:
     if average_temperature >= 25:
         if total_precipitation < 150:
@@ -742,12 +798,13 @@ def fetch_summer_weather(location: str, year: int) -> dict[str, Any]:
 
         latitude = results[0]["latitude"]
         longitude = results[0]["longitude"]
+        start_date, end_date, period_name = get_summer_period(latitude, year)
         weather_query = urlencode(
             {
                 "latitude": latitude,
                 "longitude": longitude,
-                "start_date": f"{year}-06-01",
-                "end_date": f"{year}-08-31",
+                "start_date": start_date,
+                "end_date": end_date,
                 "daily": "temperature_2m_mean,precipitation_sum",
                 "timezone": "auto",
             }
@@ -782,7 +839,7 @@ def fetch_summer_weather(location: str, year: int) -> dict[str, Any]:
         summary = (
             f"Ø {average_temperature:.1f} °C und "
             f"{total_precipitation:.0f} mm Niederschlag "
-            f"(Juni–August {year})"
+            f"({period_name} {year})"
         )
         return {
             "status": "ready",
@@ -1156,6 +1213,8 @@ def render_wine_page(
         tasting_updated=request.args.get("tasting_updated") == "1",
         wine_deleted=request.args.get("wine_deleted") == "1",
         tasting_deleted=request.args.get("tasting_deleted") == "1",
+        weather_refreshed=request.args.get("weather_refreshed") == "1",
+        weather_error=request.args.get("weather_error") == "1",
         database_error=database_error,
         editing_wine=editing_wine,
         selected_winery_id=str(selected_winery_id),

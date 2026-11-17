@@ -35,10 +35,14 @@ Optionales Seed-Skript für Beispieldaten:
 ```
 
 Beim Speichern eines Weins lädt die Anwendung einmalig das historische
-Wetter für Juni bis August des Jahrgangs am Herkunftsort. Die Zusammenfassung
+Wetter für Juni bis August des Jahrgangs am Herkunftsort auf der nördlichen
+Hemisphäre; auf der südlichen Hemisphäre werden Februar bis April ausgewertet.
+Die Zusammenfassung
 enthält die mittlere Tagestemperatur und die gesamte Niederschlagsmenge.
 Zusätzlich wird eine grobe Einschätzung zu Wärme- und Niederschlagsrisiken
 für den Jahrgang angezeigt.
+Für bereits erfasste Weine gibt es in der Weinliste einen eigenen
+Aktualisierungssymbol-Button für Wetterdaten und Einschätzung.
 Geocoding und Wetterdaten werden über die öffentlichen Open-Meteo-APIs
 bezogen. Die Ergebnisse werden in der SQLite-Datenbank gespeichert.
 
