@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Rangliste</title>
     <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='navigation.css') }}" rel="stylesheet">
     <style>
         .stars {
             color: #f5a623;
@@ -16,18 +17,8 @@
 </head>
 
 <body>
-    <nav class="navbar navbar-expand bg-body-tertiary">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">Weindegustation</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="{{ url_for('index') }}">Weine</a>
-                <a class="nav-link" href="{{ url_for('tastings') }}">Degustationen</a>
-                <a class="nav-link active" aria-current="page" href="{{ url_for('ranking') }}">
-                    Rangliste
-                </a>
-            </div>
-        </div>
-    </nav>
+    {% set active_mode = 'ranking' %}
+    {% include "_navigation.html" %}
 
     <main class="container py-4">
         <h1 class="mb-4">🏆 Top-Weine</h1>

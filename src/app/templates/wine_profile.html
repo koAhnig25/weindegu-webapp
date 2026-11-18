@@ -8,22 +8,15 @@
         href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}"
         rel="stylesheet"
     >
+    <link href="{{ url_for('static', filename='navigation.css') }}" rel="stylesheet">
     <style>
         .stars { color: #f5a623; font-size: 1.3rem; letter-spacing: 0.1rem; }
         .chart-box { max-width: 560px; }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand bg-body-tertiary">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">Weindegustation</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="{{ url_for('index') }}">Weine</a>
-                <a class="nav-link" href="{{ url_for('tastings') }}">Degustationen</a>
-                <a class="nav-link" href="{{ url_for('ranking') }}">Rangliste</a>
-            </div>
-        </div>
-    </nav>
+    {% set active_mode = 'wines' %}
+    {% include "_navigation.html" %}
 
     <main class="container py-4">
         <a href="{{ url_for('ranking') }}">← Zurück zur Rangliste</a>

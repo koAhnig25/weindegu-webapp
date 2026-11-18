@@ -68,9 +68,39 @@ def test_navigation_shows_visible_mode_buttons(client):
     assert tasting_page.status_code == 200
     assert b"Weinmodus" in wine_page.data
     assert b"Degustationsmodus" in wine_page.data
+    assert b"Rangliste" in wine_page.data
     assert b"btn-primary" in wine_page.data
     assert b"Weinmodus" in tasting_page.data
     assert b"Degustationsmodus" in tasting_page.data
+
+
+def test_navigation_is_consistent_and_marks_the_current_section(client, tmp_path):
+    wine_id = insert_wine(tmp_path / "wines.db")
+    pages = (
+        ("/", "/"),
+        ("/wines/new-for-tasting", "/tastings"),
+        ("/tastings", "/tastings"),
+        ("/tastings/new", "/tastings"),
+        (f"/wines/{wine_id}/tastings/new", "/tastings"),
+        ("/ranking", "/ranking"),
+        (f"/wines/{wine_id}/profile", "/"),
+    )
+
+    for path, active_href in pages:
+        response = client.get(path)
+
+        assert response.status_code == 200
+        assert b'aria-label="Hauptnavigation"' in response.data
+        nav = re.search(rb"<nav\b.*?</nav>", response.data, re.DOTALL)
+        assert nav is not None
+        assert nav.group().count(b'<svg class="me-1"') == 3
+        active_button = (
+            rb'<a\b(?=[^>]*\bclass="btn btn-primary")'
+            rb'(?=[^>]*\baria-current="page")(?=[^>]*\bhref="'
+            + re.escape(active_href.encode())
+            + rb'")[^>]*>'
+        )
+        assert re.search(active_button, nav.group())
 
 
 def test_wine_year_form_sets_maximum_to_current_year(client):

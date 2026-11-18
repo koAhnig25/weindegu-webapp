@@ -1,0 +1,18 @@
+.mode-switch .btn {
+    align-items: center;
+    display: inline-flex;
+    justify-content: center;
+    min-width: 9.5rem;
+}
+
+.mode-switch svg {
+    flex: none;
+    height: 1.1rem;
+    width: 1.1rem;
+}
+
+@media (max-width: 575.98px) {
+    .mode-switch .btn {
+        min-width: 0;
+    }
+}

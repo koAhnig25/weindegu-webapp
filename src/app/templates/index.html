@@ -18,51 +18,12 @@
             min-width: 58rem;
         }
 
-        .mode-switch .btn {
-            min-width: 9.5rem;
-        }
-
-        .mode-switch svg {
-            height: 1.1rem;
-            width: 1.1rem;
-        }
     </style>
+    <link href="{{ url_for('static', filename='navigation.css') }}" rel="stylesheet">
 </head>
 <body>
-    <nav class="navbar navbar-expand bg-body-tertiary">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">Weindegustation</a>
-            <div class="navbar-nav mode-switch d-flex gap-2 ms-auto" aria-label="Anzeigemodus">
-                <a
-                    class="btn {% if not form_only %}btn-primary{% else %}btn-outline-primary{% endif %}"
-                    {% if not form_only %}aria-current="page"{% endif %}
-                    href="{{ url_for('index') }}"
-                >
-                    <svg class="me-1" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                        aria-hidden="true">
-                        <path d="M8 2h8v5l3 4v9a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-9l3-4z"></path>
-                        <path d="M7 11h10M9 15h6"></path>
-                    </svg>
-                    Weinmodus
-                </a>
-                <a
-                    class="btn btn-outline-primary"
-                    href="{{ url_for('tastings') }}"
-                >
-                    <svg class="me-1" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                        aria-hidden="true">
-                        <path d="M7 3h10l-1 7a5 5 0 0 1-8 0z"></path>
-                        <path d="M12 15v6M8 21h8"></path>
-                    </svg>
-                    Degustationsmodus
-                </a>
-                <a class="nav-link" href="{{ url_for('tastings') }}">Degustationen</a>
-                <a class="nav-link" href="{{ url_for('ranking') }}">Rangliste</a>
-            </div>
-        </div>
-    </nav>
+    {% set active_mode = 'tastings' if form_only else 'wines' %}
+    {% include "_navigation.html" %}
     <main class="container py-4">
         {% if form_only %}
             <h1 class="mb-4">Wein für die Degustation erfassen</h1>
