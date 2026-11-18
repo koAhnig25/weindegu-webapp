@@ -1,65 +1,122 @@
-!! Change this document for your own project by removing the placeholder text, adding your own text, adding helpful sections etc. etc. !!
-
 # Weindegustation-WebApp
 
+Eine kleine Flask-Webanwendung zum Erfassen von Weinen und Degustationen.
+Die Anwendung speichert die Daten in einer lokalen SQLite-Datenbank und zeigt
+zusätzlich historische Sommerwetterdaten zum Jahrgang und Herkunftsort an.
 
-In a few sentences describe what your project is trying to solve.
+## Voraussetzungen
 
-You can use [GitHub markdown
-notation](https://docs.github.com/en/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)
-or [GitLab markdown notation](https://docs.gitlab.com/ee/user/markdown.html) in
-case you are using one of these platforms. This will give a nicely formatted
-documentation when looking at your project online.
+- Python
+- [uv](https://docs.astral.sh/uv/) als Python-Abhängigkeitsmanager
 
-## Get started
+## App lokal starten
 
-Explain what the user has to type to get started with your solution. Which one
-is the main Python file? In the simplest case, this could look something like
-this:
-
-```bash
-    uv run gunicorn app:app
-```
-
-or on a Windows host
+Öffne ein Terminal im Projektordner `weindegu-webapp` und installiere zuerst
+die Abhängigkeiten:
 
 ```powershell
-    uv run waitress-serve app:app
+uv sync
 ```
 
-In other cases the user might have to install some project dependencies first
-and has to run something like this (a pyproject.toml file is also included in
-the project template):
+Starte die Anwendung unter Windows mit Waitress:
 
-``
-    uv sync
-``
+```powershell
+$env:PYTHONPATH="$PWD\src"
+uv run waitress-serve --listen=127.0.0.1:8080 app:app
+```
 
-## Local deployment
+Die Anwendung läuft danach unter:
 
-If you have installed Docker locally, you can test your application in a local
-deployment using the `Dockerfile`. For this you first have to build the entire
-application into a Docker image:
+```text
+http://127.0.0.1:8080/
+```
+
+Der Terminalprozess muss während der Nutzung weiterlaufen. Zum Beenden drücke
+`Strg+C`.
+
+Für einen anderen Port ändere nur die Adresse:
+
+```powershell
+$env:PYTHONPATH="$PWD\src"
+uv run waitress-serve --listen=127.0.0.1:8081 app:app
+```
+
+Die Anwendung ist dann unter `http://127.0.0.1:8081/` erreichbar.
+
+Die Linux-Alternative ist Gunicorn:
 
 ```bash
-    docker build . -t webapp
+PYTHONPATH=src uv run gunicorn --bind 0.0.0.0:8000 app:app
 ```
 
-Now you can run this Docker image and check if your server is really starting
-correctly. Use the following command. Notice that the part `webapp` needs to
-match with whatever you chose when creating the image in the previous step:
+## Hauptfunktionen
 
-```bash
-    docker run -p 8000:8000 webapp
+### Weinmodus
+
+Im Weinmodus können Namen, Rebsorten, Jahrgänge, Herkunftsorte und Winzer
+erfasst, bearbeitet oder gelöscht werden.
+
+Beim Speichern oder Aktualisieren eines Weins wird anhand des Herkunftsorts
+eine Geoposition ermittelt. Danach werden historische Daten für die
+Sommermonate geladen:
+
+- Nördliche Hemisphäre: Juni bis August
+- Südliche Hemisphäre: Februar bis April
+
+Die Anzeige enthält die mittlere Tagestemperatur und die gesamte
+Niederschlagsmenge. Zusätzlich zeigt die Anwendung eine konservative,
+grobe Einschätzung von Wärme-, Trockenheits- und Niederschlagsrisiken.
+
+Für bereits vorhandene Weine kann das Wetter in der Weinliste über den
+Aktualisierungssymbol-Button erneut abgefragt werden.
+
+### Degustationsmodus
+
+Der **Degustationsmodus** ist über einen deutlich sichtbaren Umschalt-Button
+mit Glas-Icon erreichbar. Dort können Degustationen mit Datum, Ort, Bewertung,
+Notizen und detaillierten Tasting-Angaben verwaltet werden.
+
+Die Umschaltung ist auf allen Wein- und Degustationsseiten als beschrifteter
+**Weinmodus**- und **Degustationsmodus**-Button mit passendem Icon sichtbar.
+Der aktive Modus wird blau hervorgehoben.
+
+## Beispieldaten laden
+
+Das optionale Seed-Skript löscht bestehende Weine, Winzer und
+Degustationen und ersetzt sie durch Beispieldaten:
+
+```powershell
+$env:PYTHONPATH="$PWD\src"
+uv run seed.py
 ```
 
-You should now be able to open your web browser under the URL 
-http://localhost:8000 and you should be greeted with a very simple page.
+## Wetter-API
 
-## Understanding the sources
+Die Anwendung verwendet:
 
-Explain any high level concepts that you are using in your software. What were
-your ideas for creating the whole software? What might not be apparent from the
-sources alone? You can also add diagrams, photos of whiteboards or flipcharts
-or even crudly drawing napkin sketches of the core concepts of your software
-when they are readable and helpful for understanding.
+- Open-Meteo Geocoding API zur Ortsauflösung
+- Open-Meteo Archive API für historische Wetterdaten
+
+Die Daten werden einmalig beim Speichern beziehungsweise durch den
+Aktualisierungssymbol-Button abgefragt und in SQLite gespeichert. Ein API-
+oder Ortsfehler verhindert nicht das Speichern eines Weins.
+
+## Tests
+
+Die Testsuite ausführen:
+
+```powershell
+uv run pytest
+```
+
+## Docker
+
+Mit installiertem Docker kann die Anwendung auch als Container gestartet
+werden:
+
+```powershell
+docker build . -t webapp
+docker run -p 8000:8000 webapp
+```
+
+Danach ist die Anwendung unter `http://localhost:8000` erreichbar.

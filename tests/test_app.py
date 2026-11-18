@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 import pytest
 
+import app as app_module
 from app import create_app
 
 
@@ -57,6 +58,19 @@ def test_home_page_shows_empty_state_and_wine_form(client):
     assert b"Noch sind keine Weine erfasst." in response.data
     assert b'name="name"' in response.data
     assert b'name="rating"' not in response.data
+
+
+def test_navigation_shows_visible_mode_buttons(client):
+    wine_page = client.get("/")
+    tasting_page = client.get("/tastings")
+
+    assert wine_page.status_code == 200
+    assert tasting_page.status_code == 200
+    assert b"Weinmodus" in wine_page.data
+    assert b"Degustationsmodus" in wine_page.data
+    assert b"btn-primary" in wine_page.data
+    assert b"Weinmodus" in tasting_page.data
+    assert b"Degustationsmodus" in tasting_page.data
 
 
 def test_wine_year_form_sets_maximum_to_current_year(client):
@@ -199,6 +213,94 @@ def test_post_saves_wine_separately_from_tastings(client, tmp_path):
     assert tasting_count == 0
 
 
+def test_post_stores_summer_weather_summary(client, tmp_path, monkeypatch):
+    monkeypatch.setitem(
+        client.application.config,
+        "WEATHER_API_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        app_module,
+        "fetch_summer_weather",
+        lambda location, year: {
+            "status": "ready",
+            "summary": "Ø 21.0 °C und 300 mm Niederschlag (Juni–August 2022)",
+            "assessment": "Ausgewogen: moderate Wärme und Niederschläge.",
+            "latitude": 47.37,
+            "longitude": 8.54,
+        },
+    )
+
+    response = client.post(
+        "/",
+        data={
+            "name": "Pinot Noir",
+            "rebsorte": "Blauburgunder",
+            "jahrgang": "2022",
+            "herkunftsort": "Zuerich",
+            "winery_id": "1",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "300 mm Niederschlag".encode() in response.data
+    assert "Ausgewogen: moderate Wärme und Niederschläge.".encode() in response.data
+    with closing(sqlite3.connect(tmp_path / "wines.db")) as db:
+        saved_weather = db.execute(
+            """
+            SELECT weather_summary, weather_assessment, weather_status,
+                   weather_latitude, weather_longitude
+            FROM wines
+            WHERE name = 'Pinot Noir'
+            """
+        ).fetchone()
+    assert saved_weather == (
+        "Ø 21.0 °C und 300 mm Niederschlag (Juni–August 2022)",
+        "Ausgewogen: moderate Wärme und Niederschläge.",
+        "ready",
+        47.37,
+        8.54,
+    )
+
+
+@pytest.mark.parametrize(
+    ("temperature", "precipitation", "expected_text"),
+    [
+        (26.0, 100.0, "Sehr warm und trocken"),
+        (26.0, 500.0, "Sehr warm und niederschlagsreich"),
+        (20.0, 300.0, "Ausgewogen"),
+        (10.0, 500.0, "Kühl und niederschlagsreich"),
+    ],
+)
+def test_summer_weather_assessment_covers_risk_profiles(
+    temperature,
+    precipitation,
+    expected_text,
+):
+    assessment = app_module.assess_summer_weather(temperature, precipitation)
+
+    assert expected_text in assessment
+
+
+@pytest.mark.parametrize(
+    ("latitude", "expected_start", "expected_end", "expected_name"),
+    [
+        (47.37, "2022-06-01", "2022-08-31", "Juni–August"),
+        (-33.87, "2022-02-01", "2022-04-30", "Februar–April"),
+    ],
+)
+def test_summer_period_depends_on_hemisphere(
+    latitude,
+    expected_start,
+    expected_end,
+    expected_name,
+):
+    start, end, name = app_module.get_summer_period(latitude, 2022)
+
+    assert (start, end, name) == (expected_start, expected_end, expected_name)
+
+
 def test_post_reuses_winery_without_creating_case_variant_duplicate(client, tmp_path):
     wine = {
         "rebsorte": "Pinot Noir",
@@ -274,6 +376,56 @@ def test_post_shows_database_error_when_wine_cannot_be_saved(tmp_path):
 
     assert response.status_code == 500
     assert "Datenbankfehler".encode() in response.data
+
+
+def test_refresh_weather_updates_existing_wine_without_changing_wine(
+    client,
+    tmp_path,
+    monkeypatch,
+):
+    wine_id = insert_wine(tmp_path / "wines.db", "Pinot")
+    monkeypatch.setattr(
+        app_module,
+        "fetch_summer_weather",
+        lambda location, year: {
+            "status": "ready",
+            "summary": "Ø 22.0 °C und 280 mm Niederschlag (Juni–August 2022)",
+            "assessment": "Ausgewogen: moderate Wärme und Niederschläge.",
+            "latitude": 47.37,
+            "longitude": 8.54,
+        },
+    )
+
+    response = client.post(
+        f"/wines/{wine_id}/weather/refresh",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Wetterdaten und Einschätzung wurden aktualisiert.".encode() in response.data
+    assert "Wetterdaten aktualisieren".encode() in response.data
+    with closing(sqlite3.connect(tmp_path / "wines.db")) as db:
+        saved = db.execute(
+            """
+            SELECT name, jahrgang, herkunftsort, weather_summary,
+                   weather_assessment, weather_status
+            FROM wines
+            WHERE id = ?
+            """,
+            (wine_id,),
+        ).fetchone()
+    assert saved == (
+        "Pinot",
+        2022,
+        "Zuerich",
+        "Ø 22.0 °C und 280 mm Niederschlag (Juni–August 2022)",
+        "Ausgewogen: moderate Wärme und Niederschläge.",
+        "ready",
+    )
+
+
+def test_refresh_weather_unknown_wine_returns_404(client):
+    assert client.post("/wines/999/weather/refresh").status_code == 404
 
 
 def test_edit_updates_wine_without_changing_its_tastings(client, tmp_path):
