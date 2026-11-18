@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rangliste</title>
+    <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+    <style>
+        .stars {
+            color: #f5a623;
+            font-size: 1.2rem;
+            letter-spacing: 0.1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand bg-body-tertiary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">Weindegustation</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="{{ url_for('index') }}">Weine</a>
+                <a class="nav-link" href="{{ url_for('tastings') }}">Degustationen</a>
+                <a class="nav-link active" aria-current="page" href="{{ url_for('ranking') }}">
+                    Rangliste
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-4">
+        <h1 class="mb-4">🏆 Top-Weine</h1>
+
+        {% if wines %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th scope="col">Rang</th>
+                        <th scope="col">Wein</th>
+                        <th scope="col">Rebsorte</th>
+                        <th scope="col">Winzer</th>
+                        <th scope="col">Ø Bewertung</th>
+                        <th scope="col">Degustationen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for wine in wines %}
+                    <tr>
+                        <td>
+                            {% if loop.index == 1 %}🥇
+                            {% elif loop.index == 2 %}🥈
+                            {% elif loop.index == 3 %}🥉
+                            {% else %}{{ loop.index }}
+                            {% endif %}
+                        </td>
+                        <td><a href="{{ url_for('wine_profile', wine_id=wine.id) }}"><strong>{{ wine.name }}</strong></a> {{ wine.jahrgang }}</td>
+                        <td>{{ wine.rebsorte }}</td>
+                        <td>{{ wine.winery_name }}</td>
+                        <td>
+                            <span class="stars">
+                                {%- for i in range(1, 6) -%}
+                                {% if wine.avg_rating >= i - 0.5 %}★{% else %}☆{% endif %}
+                                {%- endfor -%}
+                            </span>
+                            {{ wine.avg_rating }}
+                        </td>
+                        <td>{{ wine.tasting_count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-body-secondary">
+            Noch keine Bewertungen vorhanden. Erfasse zuerst eine
+            <a href="{{ url_for('start_tasting') }}">Degustation</a>.
+        </p>
+        {% endif %}
+    </main>
+</body>
+
+</html>

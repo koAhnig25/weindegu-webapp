@@ -505,6 +505,88 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             )
         return redirect(url_for("tastings", tasting_deleted="1"), code=303)
 
+    @app.route("/ranking", methods=["GET"])
+    def ranking():
+        wines = (
+            get_db()
+            .execute("""
+            SELECT wines.id, wines.name, wines.jahrgang, wines.rebsorte,
+                   wineries.name AS winery_name,
+                   ROUND(AVG(tastings.rating), 1) AS avg_rating,
+                   COUNT(tastings.id) AS tasting_count
+            FROM wines
+            JOIN wineries ON wineries.id = wines.winery_id
+            JOIN tastings ON tastings.wine_id = wines.id
+            GROUP BY wines.id
+            ORDER BY avg_rating DESC, tasting_count DESC, wines.name
+            """)
+            .fetchall()
+        )
+        return render_template("ranking.html", wines=wines)
+    @app.route("/wines/<int:wine_id>/profile", methods=["GET"])
+    def wine_profile(wine_id: int):
+        wine = get_wine(wine_id)
+        if wine is None:
+            abort(404)
+        tastings = (
+            get_db()
+            .execute(
+                "SELECT rating, detailed_tasting FROM tastings WHERE wine_id = ?",
+                (wine_id,),
+            )
+            .fetchall()
+        )
+        axes = (
+            ("Farbintensität", "appearance_intensity",
+             {"pale": 1, "medium": 2, "deep": 3}),
+            ("Nase", "nose_intensity",
+             {"neutral": 1, "medium": 2, "aromatic": 3}),
+            ("Süsse", "taste_sweetness",
+             {"dry": 1, "slightly_sweet": 2, "sweet": 3}),
+            ("Säure", "taste_acidity",
+             {"slightly_sour": 2, "very_sour": 3}),
+            ("Tannin", "taste_tannin",
+             {"slightly_astringent": 2, "very_astringent": 3}),
+            ("Körper", "taste_body",
+             {"light": 1, "medium": 2, "heavy": 3}),
+            ("Abgang", "finish_length",
+             {"short": 1, "medium": 2, "long": 3}),
+        )
+        aroma_labels = {}
+        for group in TASTING_DETAIL_GROUPS:
+            if group["key"] in ("nose_aromas", "taste_aromas"):
+                aroma_labels.update(dict(group["options"]))
+        sums = {label: [] for label, _key, _scale in axes}
+        aroma_counts: dict[str, int] = {}
+        for tasting in tastings:
+            details = load_detailed_tasting(tasting["detailed_tasting"])
+            for label, key, scale in axes:
+                for value in details.get(key, []):
+                    if value in scale:
+                        sums[label].append(scale[value])
+            for key in ("nose_aromas", "taste_aromas"):
+                for value in details.get(key, []):
+                    name = aroma_labels.get(value, value)
+                    aroma_counts[name] = aroma_counts.get(name, 0) + 1
+        profile = {
+            label: round(sum(values) / len(values), 1) if values else 0
+            for label, values in sums.items()
+        }
+        has_details = any(sums.values())
+        ratings = [tasting["rating"] for tasting in tastings]
+        avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
+        top_aromas = sorted(aroma_counts.items(), key=lambda item: -item[1])[:5]
+        return render_template(
+            "wine_profile.html",
+            wine=wine,
+            profile_labels=list(profile.keys()),
+            profile_values=list(profile.values()),
+            has_details=has_details,
+            avg_rating=avg_rating,
+            tasting_count=len(tastings),
+            top_aromas=top_aromas,
+        )
+
     return app
 
 

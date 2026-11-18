@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Profil – {{ wine.name }}</title>
+    <link
+        href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}"
+        rel="stylesheet"
+    >
+    <style>
+        .stars { color: #f5a623; font-size: 1.3rem; letter-spacing: 0.1rem; }
+        .chart-box { max-width: 560px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand bg-body-tertiary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">Weindegustation</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="{{ url_for('index') }}">Weine</a>
+                <a class="nav-link" href="{{ url_for('tastings') }}">Degustationen</a>
+                <a class="nav-link" href="{{ url_for('ranking') }}">Rangliste</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-4">
+        <a href="{{ url_for('ranking') }}">← Zurück zur Rangliste</a>
+        <h1 class="mt-3 mb-1">🕸️ {{ wine.name }} {{ wine.jahrgang }}</h1>
+        <p class="text-body-secondary">
+            {{ wine.rebsorte }} · {{ wine.herkunftsort }} · {{ wine.winery_name }}
+        </p>
+
+        {% if avg_rating is not none %}
+            <p>
+                <span class="stars">
+                    {%- for i in range(1, 6) -%}
+                        {% if avg_rating >= i - 0.5 %}★{% else %}☆{% endif %}
+                    {%- endfor -%}
+                </span>
+                {{ avg_rating }} aus {{ tasting_count }} Degustation(en)
+            </p>
+        {% endif %}
+
+        {% if has_details %}
+            <h2 class="h4 mt-4">Geschmacksprofil</h2>
+            <p class="text-body-secondary small">
+                Durchschnitt aller Detail-Degus · Skala 1 (wenig) bis 3 (viel)
+            </p>
+            <div class="chart-box">
+                <canvas id="profileChart"></canvas>
+            </div>
+
+            {% if top_aromas %}
+                <h2 class="h4 mt-4">Häufigste Aromen</h2>
+                <p>
+                    {% for name, count in top_aromas %}
+                        <span class="badge text-bg-secondary me-1">{{ name }} ({{ count }})</span>
+                    {% endfor %}
+                </p>
+            {% endif %}
+
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+            <script>
+                new Chart(document.getElementById("profileChart"), {
+                    type: "radar",
+                    data: {
+                        labels: {{ profile_labels|tojson }},
+                        datasets: [{
+                            label: {{ wine.name|tojson }},
+                            data: {{ profile_values|tojson }},
+                            backgroundColor: "rgba(128, 0, 64, 0.2)",
+                            borderColor: "rgb(128, 0, 64)",
+                            pointBackgroundColor: "rgb(128, 0, 64)",
+                        }],
+                    },
+                    options: {
+                        scales: { r: { min: 0, max: 3, ticks: { stepSize: 1 } } },
+                        plugins: { legend: { display: false } },
+                    },
+                });
+            </script>
+        {% else %}
+            <p class="alert alert-info mt-4">
+                Für diesen Wein gibt es noch keine Detail-Degu.
+                Erfasse eine Degustation und fülle den Teil «Detail-Degu» aus,
+                dann erscheint hier das Spinnendiagramm.
+            </p>
+            <a class="btn btn-primary" href="{{ url_for('new_tasting', wine_id=wine.id) }}">
+                Degustation erfassen
+            </a>
+        {% endif %}
+    </main>
+</body>
+</html>
