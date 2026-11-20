@@ -51,6 +51,9 @@
         {% if tasting_deleted %}
             <p class="alert alert-success" role="status">Die Degustation wurde gelöscht.</p>
         {% endif %}
+        {% if demo_deleted %}
+            <p class="alert alert-success" role="status">Die Demodaten wurden gelöscht.</p>
+        {% endif %}
         {% if weather_refreshed %}
             <p class="alert alert-success" role="status">
                 Wetterdaten und Einschätzung wurden aktualisiert.
@@ -144,6 +147,20 @@
             </p>
         {% elif not database_error and not form_only %}
             <h2 class="h3 mb-3">Erfasste Weine</h2>
+            {% if has_demo_data %}
+                <div class="alert alert-info d-flex flex-wrap align-items-center justify-content-between gap-2" role="status">
+                    <span>Die Liste enthält Demodaten, damit die App nicht leer ist.</span>
+                    <form
+                        method="post"
+                        action="{{ url_for('delete_demo_data_route') }}"
+                        onsubmit="return confirm('Möchtest du alle Demodaten inklusive ihrer Degustationen löschen? Selbst erfasste Weine bleiben erhalten.')"
+                    >
+                        <button class="btn btn-sm btn-outline-danger" type="submit">
+                            Demodaten löschen
+                        </button>
+                    </form>
+                </div>
+            {% endif %}
             {% if wines %}
                 <div class="table-responsive">
                 <table class="table table-striped table-hover align-middle wine-table">
