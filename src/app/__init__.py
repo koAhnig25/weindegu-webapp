@@ -209,8 +209,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     )
     if test_config is not None:
         app.config.update(test_config)
+    # Demodaten standardmässig einfügen, ausser in Tests (dort ist die DB leer).
+    app.config.setdefault("DEMO_DATA", not app.config.get("TESTING", False))
 
     init_db(app)
+    if app.config["DEMO_DATA"]:
+        seed_demo_data_if_empty(app)
 
     @app.teardown_appcontext
     def close_db(_error: BaseException | None = None) -> None:
@@ -458,6 +462,28 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         if weather["status"] == "ready":
             return redirect(url_for("index", weather_refreshed="1"), code=303)
         return redirect(url_for("index", weather_error="1"), code=303)
+
+    @app.post("/demo-data/delete")
+    def delete_demo_data_route():
+        db = get_db()
+        try:
+            delete_demo_data(db)
+            db.commit()
+        except sqlite3.Error:
+            db.rollback()
+            current_app.logger.exception("Could not delete demo data")
+            return (
+                render_wine_page(
+                    {},
+                    [],
+                    database_error=(
+                        "Die Demodaten konnten wegen eines Datenbankfehlers "
+                        "nicht gelöscht werden."
+                    ),
+                ),
+                500,
+            )
+        return redirect(url_for("index", demo_deleted="1"), code=303)
 
     @app.post("/wines/<int:wine_id>/delete")
     def delete_wine(wine_id: int):
@@ -710,6 +736,17 @@ def init_db(app: Flask) -> None:
                     f"ALTER TABLE wines ADD COLUMN {column_name} {column_type}"
                 )
 
+        # Markierung für Demodaten, damit nur diese gezielt gelöscht werden.
+        if "is_demo" not in wine_columns:
+            db.execute(
+                "ALTER TABLE wines ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0"
+            )
+        winery_columns = {row[1] for row in db.execute("PRAGMA table_info(wineries)")}
+        if "is_demo" not in winery_columns:
+            db.execute(
+                "ALTER TABLE wineries ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0"
+            )
+
         db.commit()
 
 
@@ -729,9 +766,101 @@ def create_wines_table(db: sqlite3.Connection) -> None:
             weather_status TEXT,
             weather_latitude REAL,
             weather_longitude REAL,
-            weather_fetched_at TEXT
+            weather_fetched_at TEXT,
+            is_demo INTEGER NOT NULL DEFAULT 0
         )
         """)
+
+
+# Beispieldaten: (Weinname, Rebsorte, Jahrgang, Herkunftsort, Winzer, Degustation)
+# Degustation: (Datum, Ort, Bewertung 1-5, Notizen)
+DEMO_WINES = (
+    (
+        "Chateau Margaux",
+        "Cabernet Sauvignon",
+        2015,
+        "Bordeaux",
+        "Chateau Margaux",
+        ("2026-10-31", "Bordeaux", 5, "Hervorragender Jahrgang, sehr komplex."),
+    ),
+    (
+        "Maienfelder Pinot Noir",
+        "Pinot Noir",
+        2021,
+        "Maienfeld",
+        "Maienfelder Weinbau",
+        ("2026-10-31", "Maienfeld", 4, "Fruchtig, leicht, perfekt für den Sommer."),
+    ),
+    (
+        "Chianti Classico",
+        "Sangiovese",
+        2019,
+        "Florenz",
+        "Chianti Classico",
+        ("2026-10-31", "Florenz", 3, "Solider Alltagswein, gute Säurestruktur."),
+    ),
+)
+
+
+def insert_demo_data(db: sqlite3.Connection) -> None:
+    """Fügt die Beispielweine samt Winzer und Degustation ein (is_demo = 1)."""
+    for name, rebsorte, jahrgang, herkunftsort, winery_name, tasting in DEMO_WINES:
+        existing_winery = db.execute(
+            "SELECT id FROM wineries WHERE name = ? COLLATE NOCASE",
+            (winery_name,),
+        ).fetchone()
+        if existing_winery is not None:
+            # Bestehender Winzer wird wiederverwendet, aber nicht als Demo markiert.
+            winery_id = existing_winery[0]
+        else:
+            winery_id = db.execute(
+                "INSERT INTO wineries (name, is_demo) VALUES (?, 1)",
+                (winery_name,),
+            ).lastrowid
+        wine_id = db.execute(
+            """
+            INSERT INTO wines
+                (name, rebsorte, jahrgang, herkunftsort, winery_id, is_demo)
+            VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            (name, rebsorte, jahrgang, herkunftsort, winery_id),
+        ).lastrowid
+        db.execute(
+            """
+            INSERT INTO tastings (wine_id, tasting_date, location, rating, notes)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (wine_id, *tasting),
+        )
+
+
+def seed_demo_data_if_empty(app: Flask) -> None:
+    """Füllt beim Start Demodaten ein, wenn noch kein Wein erfasst ist.
+
+    Auf dem Gratis-Plan von Render ist die SQLite-Datei nach jedem Deploy oder
+    Neustart leer. So hat die öffentliche App trotzdem immer Beispieldaten.
+    """
+    with closing(sqlite3.connect(app.config["DATABASE"])) as db:
+        db.execute("PRAGMA foreign_keys = ON")
+        if db.execute("SELECT COUNT(*) FROM wines").fetchone()[0] == 0:
+            insert_demo_data(db)
+            db.commit()
+
+
+def delete_demo_data(db: sqlite3.Connection) -> None:
+    """Löscht nur Demodaten; selbst erfasste Weine bleiben erhalten."""
+    # Degustationen werden per ON DELETE CASCADE mitgelöscht.
+    db.execute("DELETE FROM wines WHERE is_demo = 1")
+    db.execute("""
+        DELETE FROM wineries
+        WHERE is_demo = 1
+          AND id NOT IN (SELECT winery_id FROM wines)
+        """)
+
+
+def has_demo_data(db: sqlite3.Connection) -> bool:
+    row = db.execute("SELECT 1 FROM wines WHERE is_demo = 1 LIMIT 1").fetchone()
+    return row is not None
 
 
 def get_wine(wine_id: int) -> sqlite3.Row | None:
@@ -799,7 +928,9 @@ def get_summer_period(latitude: float, year: int) -> tuple[str, str, str]:
     return f"{year}-06-01", f"{year}-08-31", "Juni–August"
 
 
-def assess_summer_weather(average_temperature: float, total_precipitation: float) -> str:
+def assess_summer_weather(
+    average_temperature: float, total_precipitation: float
+) -> str:
     if average_temperature >= 25:
         if total_precipitation < 150:
             return (
@@ -1295,6 +1426,8 @@ def render_wine_page(
         tasting_updated=request.args.get("tasting_updated") == "1",
         wine_deleted=request.args.get("wine_deleted") == "1",
         tasting_deleted=request.args.get("tasting_deleted") == "1",
+        demo_deleted=request.args.get("demo_deleted") == "1",
+        has_demo_data=database_error is None and has_demo_data(db),
         weather_refreshed=request.args.get("weather_refreshed") == "1",
         weather_error=request.args.get("weather_error") == "1",
         database_error=database_error,

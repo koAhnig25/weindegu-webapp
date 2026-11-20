@@ -1013,3 +1013,61 @@ def test_original_wines_without_winery_are_migrated(tmp_path):
             JOIN tastings ON tastings.wine_id = wines.id
             """).fetchone()
     assert saved == (7, "Altwein", "Unbekannt", 4, "Gut", "2026-10-31")
+
+
+def count_rows(database_path, table, where="1 = 1"):
+    with closing(sqlite3.connect(database_path)) as db:
+        return db.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}").fetchone()[0]
+
+
+def test_demo_data_is_created_when_database_is_empty(tmp_path):
+    database_path = tmp_path / "wines.db"
+    create_app({"DATABASE": database_path, "TESTING": True, "DEMO_DATA": True})
+
+    assert count_rows(database_path, "wines", "is_demo = 1") == len(
+        app_module.DEMO_WINES
+    )
+    assert count_rows(database_path, "tastings") == len(app_module.DEMO_WINES)
+
+
+def test_demo_data_is_not_added_when_wines_exist(tmp_path):
+    database_path = tmp_path / "wines.db"
+    create_app({"DATABASE": database_path, "TESTING": True})
+    insert_wine(database_path, "Eigener Wein")
+
+    create_app({"DATABASE": database_path, "TESTING": True, "DEMO_DATA": True})
+
+    assert count_rows(database_path, "wines") == 1
+    assert count_rows(database_path, "wines", "is_demo = 1") == 0
+
+
+def test_no_demo_data_in_tests_by_default(client, tmp_path):
+    assert count_rows(tmp_path / "wines.db", "wines") == 0
+    assert "Demodaten löschen" not in client.get("/").get_data(as_text=True)
+
+
+def test_delete_demo_data_keeps_own_wines(tmp_path):
+    database_path = tmp_path / "wines.db"
+    app = create_app({"DATABASE": database_path, "TESTING": True, "DEMO_DATA": True})
+    insert_wine(database_path, "Eigener Wein")
+    client = app.test_client()
+
+    page = client.get("/").get_data(as_text=True)
+    assert "Demodaten löschen" in page
+
+    response = client.post("/demo-data/delete")
+
+    assert response.status_code == 303
+    assert response.headers["Location"].endswith("/?demo_deleted=1")
+    with closing(sqlite3.connect(database_path)) as db:
+        remaining = [row[0] for row in db.execute("SELECT name FROM wines")]
+        demo_wineries = db.execute(
+            "SELECT COUNT(*) FROM wineries WHERE is_demo = 1"
+        ).fetchone()[0]
+    assert remaining == ["Eigener Wein"]
+    assert demo_wineries == 0
+    assert count_rows(database_path, "tastings") == 0
+
+    page = client.get("/?demo_deleted=1").get_data(as_text=True)
+    assert "Die Demodaten wurden gelöscht." in page
+    assert "Demodaten löschen" not in page

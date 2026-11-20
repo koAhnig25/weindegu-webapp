@@ -1,103 +1,29 @@
-import sqlite3
+"""Setzt die lokale Datenbank auf die Demodaten zurück.
 
-from app import create_app, init_db
+Achtung: Löscht alle Weine, Winzer und Degustationen.
+Aufruf (aus dem Projektordner): uv run python seed.py
+"""
+
+import sqlite3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+
+from app import create_app, insert_demo_data  # noqa: E402
 
 
 def seed_database() -> None:
-    app = create_app()
-    database_path = app.config["DATABASE"]
+    app = create_app({"DEMO_DATA": False})
 
-    init_db(app)
-    with sqlite3.connect(database_path) as db:
+    with sqlite3.connect(app.config["DATABASE"]) as db:
         db.execute("PRAGMA foreign_keys = ON")
         db.execute("DELETE FROM tastings")
         db.execute("DELETE FROM wines")
-        db.execute("DELETE FROM wineries")
+        db.execute("DELETE FROM wineries WHERE name != 'Unbekannt'")
+        insert_demo_data(db)
 
-        wineries = (
-            ("Unbekannt",),
-            ("Chateau Margaux",),
-            ("Maienfelder Weinbau",),
-            ("Chianti Classico",),
-        )
-        db.executemany("INSERT INTO wineries (name) VALUES (?)", wineries)
-
-        winery_ids = {
-            row[1]: row[0]
-            for row in db.execute("SELECT id, name FROM wineries")
-        }
-        wines = (
-            (
-                "Chateau Margaux",
-                "Cabernet Sauvignon",
-                2015,
-                "Bordeaux",
-                winery_ids["Chateau Margaux"],
-            ),
-            (
-                "Maienfelder Pinot Noir",
-                "Pinot Noir",
-                2021,
-                "Maienfeld",
-                winery_ids["Maienfelder Weinbau"],
-            ),
-            (
-                "Chianti Classico",
-                "Sangiovese",
-                2019,
-                "Florenz",
-                winery_ids["Chianti Classico"],
-            ),
-        )
-        db.executemany(
-            """
-            INSERT INTO wines
-                (name, rebsorte, jahrgang, herkunftsort, winery_id)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            wines,
-        )
-
-        wine_ids = {
-            row[1]: row[0]
-            for row in db.execute("SELECT id, name FROM wines")
-        }
-        tastings = (
-            (
-                wine_ids["Chateau Margaux"],
-                "2026-10-31",
-                "Bordeaux",
-                5,
-                "Hervorragender Jahrgang, sehr komplex.",
-                None,
-            ),
-            (
-                wine_ids["Maienfelder Pinot Noir"],
-                "2026-10-31",
-                "Maienfeld",
-                4,
-                "Fruchtig, leicht, perfekt fuer den Sommer.",
-                None,
-            ),
-            (
-                wine_ids["Chianti Classico"],
-                "2026-10-31",
-                "Florenz",
-                3,
-                "Solider Alltagswein, gute Saeurestruktur.",
-                None,
-            ),
-        )
-        db.executemany(
-            """
-            INSERT INTO tastings
-                (wine_id, tasting_date, location, rating, notes, detailed_tasting)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            tastings,
-        )
-
-    print("Datenbank wurde mit 3 Beispielweinen und 3 Degustationen gefuellt.")
+    print("Datenbank wurde mit Demodaten gefüllt.")
 
 
 if __name__ == "__main__":
